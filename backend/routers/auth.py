@@ -8,7 +8,7 @@ def signIn(data: SigninRequest, request: Request):
     result = validateUser(data)
     if not result:
         return {"error": "Invalid credentials"}
-    request.session["username"] = data.username
+    request.session["user_id"] = result["user_id"]
     return {"message": "User signed in successfully"}
 
 @router.post("/signup")
