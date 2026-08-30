@@ -45,10 +45,29 @@ export default function App() {
 
   return (
     <main className="shell">
-      <section className="panel">
-        <p className="eyebrow">Exam Platform</p>
-        <h1>Secure login</h1>
-        <p className="copy">Sign in with your account to access available tests.</p>
+      <section className="intro" aria-label="Test Taker">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          <span>Test Taker</span>
+        </div>
+        <p className="intro-label">Assessment environment</p>
+        <h1 className="intro-title">Focus on what<br />matters.</h1>
+        <p className="intro-copy">
+          A considered space for taking timed assessments with clarity and confidence.
+        </p>
+        <div className="intro-footer">
+          <span>Secure session</span>
+          <span>01 / 01</span>
+        </div>
+      </section>
+
+      <section className="panel" aria-labelledby="login-title">
+        <div className="panel-heading">
+          <p className="eyebrow">Account access</p>
+          <span className="panel-index">01</span>
+        </div>
+        <h2 id="login-title">Welcome back.</h2>
+        <p className="copy">Enter your credentials to continue to your assessments.</p>
 
         <form className="form" onSubmit={handleSubmit}>
           <label>
