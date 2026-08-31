@@ -7,7 +7,13 @@ from io import StringIO
 router = APIRouter()
 
 @router.post("/upload-csv")
-def upload_exam(data: CatalogItem, csv_file: UploadFile = File(...), user: str = Depends(get_current_user)):
+def upload_exam(data: CatalogItem, csv_file: UploadFile = File(...), user_info: tuple = Depends(get_current_user)):
+    username, is_admin = user_info
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can upload exams",
+        )
     return upload(data, csv_file)
 
 

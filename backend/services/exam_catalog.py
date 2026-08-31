@@ -7,13 +7,12 @@ import uuid
 
 async def upload(data: CatalogItem, csv_file: UploadFile):
     if not csv_file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
         
     content = await csv_file.read()
     content = content.decode("utf-8")
     reader = csv.DictReader(StringIO(content))
-    if not data:
-        return {"error": "invalid data"}
+
     try:
         questions = [Question(**row) for row in reader]
         with get_connection() as conn:
@@ -21,7 +20,7 @@ async def upload(data: CatalogItem, csv_file: UploadFile):
             conn.execute("""
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, state, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (data.exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.state))
+            """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.state))
             
         return {"data": data,  "questions": questions}
     except Exception as e:
