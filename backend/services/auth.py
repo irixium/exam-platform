@@ -1,11 +1,13 @@
 from schemas.auth import SignupRequest, SigninRequest
-from fastapi import Request
+from fastapi import Request, HTTPException
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from database import get_connection
 import uuid
+from app_secrets import admins
 
 ph = PasswordHasher()
+
 
 def hashPassword(password: str) -> str:
     return ph.hash(password)
@@ -41,3 +43,23 @@ def addUser(data: SignupRequest):
     return {"message": "User signed up successfully"}
 
 
+async def get_current_user(request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+        )
+
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            username = row[0]
+            return (username, username in admins)
+
+    
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid session",
+    )

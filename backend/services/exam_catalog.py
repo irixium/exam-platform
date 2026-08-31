@@ -1,9 +1,33 @@
 from schemas.exam_catalog import CatalogItem, Question
 from database import get_connection
-from fastapi import UploadFile, File, HTTPException
+from fastapi import UploadFile, File, HTTPException, Form
 import csv
 from io import StringIO
 import uuid
+
+def parse_catalog_item(
+    exam_id: str = Form(...),
+    name: str = Form(...),
+    exam_type: str = Form(...),
+    description: str = Form(""),
+    duration: int = Form(...),
+    total_marks: int = Form(...),
+    state: str = Form(...),
+    created_at: str = Form(...),
+    updated_at: str = Form(...),
+) -> CatalogItem:
+    return CatalogItem(
+        exam_id=exam_id,
+        name=name,
+        exam_type=exam_type,
+        description=description,
+        duration=duration,
+        total_marks=total_marks,
+        state=state,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+
 
 async def upload(data: CatalogItem, csv_file: UploadFile):
     if not csv_file.filename.endswith('.csv'):
@@ -11,16 +35,25 @@ async def upload(data: CatalogItem, csv_file: UploadFile):
         
     content = await csv_file.read()
     content = content.decode("utf-8")
-    reader = csv.DictReader(StringIO(content))
+    reader = list(csv.DictReader(StringIO(content)))
 
     try:
-        questions = [Question(**row) for row in reader]
+        exam_id = str(uuid.uuid4())
+      #  print(reader[0])
+        questions = [
+                    Question(
+                        **row,
+                        exam_id=exam_id,
+                        question_id=str(uuid.uuid4()),
+                    )
+                    for row in reader
+                ]
         with get_connection() as conn:
-            exam_id = str(uuid.uuid4())
+            
             conn.execute("""
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.state))
+                VALUES (?, ?, ?, ?, ?, ?, "DRAFT", CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks))
             
         return {"data": data,  "questions": questions}
     except Exception as e:

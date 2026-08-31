@@ -1,34 +1,13 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
 from starlette.middleware.sessions import SessionMiddleware
 from routers import auth, exam_catalog
-from app_secrets import session_secret_key, admins
+from services.auth import get_current_user
+from app_secrets import session_secret_key
 from database import init_db
 from database import get_connection
 init_db()
 
 app = FastAPI()
-
-async def get_current_user(request: Request):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated",
-        )
-
-    with get_connection() as conn:
-        cursor = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,))
-        row = cursor.fetchone()
-        if row:
-            username = row[0]
-            return (username, username in admins)
-
-    
-    raise HTTPException(
-        status_code=401,
-        detail="Invalid session",
-    )
-
 
 app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
 
