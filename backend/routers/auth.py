@@ -14,3 +14,8 @@ def signIn(data: SigninRequest, request: Request):
 @router.post("/signup")
 def signUp(data: SignupRequest):
     return addUser(data)
+
+@router.post("/signout")
+def signOut(request: Request):
+    request.session.clear()
+    return {"message": "User signed out successfully"}
