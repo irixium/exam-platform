@@ -19,7 +19,7 @@ async def upload_exam(data: CatalogItem = Depends(parse_catalog_item), exam_doc:
 
 @router.delete("/delete-exam/{exam_id}")
 def delete_exam(exam_id: str, user_info: tuple = Depends(get_current_user)):
-    user_id, is_admin = user_info
+    _, is_admin = user_info
     if not is_admin:
         raise HTTPException(
             status_code=403,
