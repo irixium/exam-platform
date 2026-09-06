@@ -8,13 +8,13 @@ router = APIRouter()
 
 @router.post("/upload-exam")
 async def upload_exam(data: CatalogItem = Depends(parse_catalog_item), exam_doc: UploadFile = File(...), key_csv: UploadFile = File(...), user_info: tuple = Depends(get_current_user)):
-    user_id, is_admin = user_info
+    username, is_admin = user_info
     if not is_admin:
         raise HTTPException(
             status_code=403,
             detail="Only admins can upload exams",
         )
-    result = await upload(data, exam_doc, key_csv, user_id)
+    result = await upload(data, exam_doc, key_csv, username)
     return result
 
 @router.delete("/delete-exam/{exam_id}")

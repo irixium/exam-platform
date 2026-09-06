@@ -26,7 +26,7 @@ def parse_catalog_item(
     )
 
 
-async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, user_id: str):
+async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, username: str):
     if exam_doc.content_type != "application/pdf":
         raise HTTPException(400, "File must be a PDF")
     try:
@@ -41,7 +41,7 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
     if not key_csv.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Invalid file type for answer key. Please upload a CSV file.")
     with get_connection() as conn:
-        user_id = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         if not user_id:
             raise HTTPException(status_code=400, detail="User not found")
         user_id = user_id[0]
@@ -50,7 +50,6 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
         content = await key_csv.read()
         content = content.decode("utf-8")
         rows = list(csv.DictReader(StringIO(content)))
-
         exam_id = str(uuid.uuid4())
 
         answers = [
@@ -82,7 +81,7 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, exam_path, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, str(exam_path), user_id))
-            conn.execute("""
+            conn.executemany("""
                 INSERT INTO answers (exam_id, question_number, correct_answer)
                 VALUES (?, ?, ?)
             """, [(exam_id, answer.question_number, answer.correct_answer) for answer in answers])
