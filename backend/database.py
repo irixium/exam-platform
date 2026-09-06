@@ -61,8 +61,10 @@ def init_db():
                         FOREIGN KEY (username) REFERENCES users (username)
                         )
                 """)
+
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS answer_submissions (
+                        attempt_id TEXT NOT NULL,
                         exam_id TEXT NOT NULL,
                         username TEXT NOT NULL,
                         question_number INTEGER NOT NULL,

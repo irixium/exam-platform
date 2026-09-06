@@ -7,6 +7,7 @@ import csv
 from io import StringIO
 import uuid
 from pypdf import PdfReader
+import time
 
 def parse_catalog_item(
     exam_id: str = Form(...),
@@ -139,14 +140,16 @@ def get_catalog_items():
             exam_type=row[6]
         ) for row in rows]
 
-def get_question_list(exam_id: str, username: str):
+def get_question_list(attempt_id: str, username: str):
     with get_connection() as conn:
-        cursor = conn.execute("SELECT id FROM users WHERE username = ?", (username,))
-        user_row = cursor.fetchone()
-        if not user_row:
-            raise HTTPException(status_code=400, detail="User not found")
-        user_id = user_row[0]
-
+        row = conn.execute("""SELECT exam_id, expiry_time FROM exam_attempts 
+                                   WHERE attempt_id = ? AND username = ? AND SUBMISSION_TIME IS NULL""", (attempt_id, username)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Exam attempt not found")
+        exam_id, expiry_time = row
+        current_time = int(time.time())
+        if current_time > expiry_time:
+            raise HTTPException(status_code=400, detail="Exam attempt has expired")
         cursor = conn.execute("SELECT * FROM exam_catalog WHERE exam_id = ?", (exam_id,))
         exam_row = cursor.fetchone()
         if not exam_row:
