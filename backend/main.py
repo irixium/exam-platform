@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
 from starlette.middleware.sessions import SessionMiddleware
-from routers import auth, exam_catalog
+from routers import auth, exam_catalog, exam_attempt
 from services.auth import get_current_user
 from app_secrets import session_secret_key
 from database import init_db
@@ -13,6 +13,7 @@ app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
 
 app.include_router(auth.router)
 app.include_router(exam_catalog.router)
+app.include_router(exam_attempt.router)
 @app.get("/health")
 def health_check():
     return {"status": "ok"}

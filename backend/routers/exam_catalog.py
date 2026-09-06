@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends
 from schemas.exam_catalog import CatalogItem
-from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item
+from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item, get_question_list
 from services.auth import get_current_user
 import csv
 from io import StringIO
@@ -32,3 +32,8 @@ def delete_exam(exam_id: str, user_info: tuple = Depends(get_current_user)):
 @router.get("/exam-list", response_model=list[CatalogItem])
 def get_catalog(user: str = Depends(get_current_user)):
     return get_catalog_items()
+
+@router.get("/question-list/{exam_id}")
+def get_questions(exam_id: str, user_info: tuple = Depends(get_current_user)):
+    username, is_admin = user_info
+    return get_question_list(exam_id, username)

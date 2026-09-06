@@ -25,6 +25,7 @@ def init_db():
                         description TEXT,
                         duration INTEGER NOT NULL,
                         total_marks INTEGER NOT NULL,
+                        total_questions INTEGER NOT NULL,
                         exam_path TEXT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

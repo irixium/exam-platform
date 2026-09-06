@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from schemas.exam_catalog import CatalogItem, Answer
+from schemas.exam_catalog import CatalogItem, Answer, Question
 from database import get_connection
 from fastapi import UploadFile, File, HTTPException, Form
 import csv
@@ -15,6 +15,7 @@ def parse_catalog_item(
     description: str = Form(""),
     duration: int = Form(...),
     total_marks: int = Form(...),
+    total_questions: int = Form(...)
 ) -> CatalogItem:
     return CatalogItem(
         exam_id=exam_id,
@@ -22,7 +23,8 @@ def parse_catalog_item(
         exam_type=exam_type,
         description=description,
         duration=duration,
-        total_marks=total_marks
+        total_marks=total_marks,
+        total_questions=total_questions
     )
 
 
@@ -51,7 +53,6 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
         content = content.decode("utf-8")
         rows = list(csv.DictReader(StringIO(content)))
         exam_id = str(uuid.uuid4())
-
         answers = [
             Answer(
                 **row,
@@ -71,23 +72,24 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
         exam_path.parent.mkdir(parents=True, exist_ok=True)
         with open(exam_path, "wb") as f:
             f.write(await exam_doc.read())
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving PDF file: {str(e)}")
 
     try:
         with get_connection() as conn:
             conn.execute("""
-                INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, 
+                INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, total_questions,
                 exam_path, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, str(exam_path), user_id))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.total_questions, 
+                  str(exam_path), user_id))
             conn.executemany("""
                 INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score, 
                 question_type, option_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
                     answer.question_type, answer.option_count) for answer in answers])
+            print('here')
     except Exception as e:
         if exam_path.exists():
             exam_path.unlink()
@@ -125,7 +127,7 @@ def remove(exam_id: str):
 
 def get_catalog_items():
     with get_connection() as conn:
-        cursor = conn.execute("SELECT exam_id, name, description, duration, total_marks, created_by FROM exam_catalog")
+        cursor = conn.execute("SELECT exam_id, name, description, duration, total_marks, total_questions, exam_type, created_by FROM exam_catalog")
         rows = cursor.fetchall()
         return [CatalogItem(
             exam_id=row[0],
@@ -133,8 +135,33 @@ def get_catalog_items():
             description=row[2],
             duration=row[3],
             total_marks=row[4],
-            created_by=row[5],
+            total_questions=row[5],
+            exam_type=row[6]
         ) for row in rows]
+
+def get_question_list(exam_id: str, username: str):
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT id FROM users WHERE username = ?", (username,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            raise HTTPException(status_code=400, detail="User not found")
+        user_id = user_row[0]
+
+        cursor = conn.execute("SELECT * FROM exam_catalog WHERE exam_id = ?", (exam_id,))
+        exam_row = cursor.fetchone()
+        if not exam_row:
+            raise HTTPException(status_code=404, detail="Exam not found")
+
+        cursor = conn.execute("SELECT * FROM answers WHERE exam_id = ?", (exam_id,))
+        answer_rows = cursor.fetchall()
+        return [Question(
+            exam_id=row[0],
+            question_number=row[1],
+            correct_score=row[3],
+            incorrect_score=row[4],
+            question_type=row[5],
+            option_count=row[6]
+        ) for row in answer_rows]
 
 
 
