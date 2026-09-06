@@ -78,13 +78,16 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
     try:
         with get_connection() as conn:
             conn.execute("""
-                INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, exam_path, created_by, created_at, updated_at)
+                INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, 
+                exam_path, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, str(exam_path), user_id))
             conn.executemany("""
-                INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score)
-                VALUES (?, ?, ?, ?, ?)
-            """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score) for answer in answers])
+                INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score, 
+                question_type, option_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
+                    answer.question_type, answer.option_count) for answer in answers])
     except Exception as e:
         if exam_path.exists():
             exam_path.unlink()

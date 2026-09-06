@@ -39,6 +39,8 @@ def init_db():
                         correct_answer TEXT NOT NULL,
                         correct_score INTEGER NOT NULL,
                         incorrect_score INTEGER NOT NULL,
+                        question_type TEXT NOT NULL CHECK (question_type IN ('MCQ', 'Descriptive')),
+                        option_count INTEGER NOT NULL,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
                     )
                 """)
@@ -49,7 +51,7 @@ def init_db():
                         start_time TIMESTAMP NOT NULL,
                         expiry_time TIMESTAMP NOT NULL,
                         submission_time TIMESTAMP,
-                        evaluation_status TEXT DEFAULT 'pending',
+                        evaluation_status TEXT DEFAULT 'pending' CHECK (evaluation_status IN ('pending', 'evaluated')),
                         evaluation_time TIMESTAMP,
                         score INTEGER,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id),
