@@ -55,8 +55,8 @@ async def get_current_user(request: Request):
         cursor = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
         if row:
-            username = row[0]
-            return (username, username in admins)
+            user_id = row[0]
+            return (user_id, user_id in admins)
 
     
     raise HTTPException(

@@ -23,25 +23,20 @@ def init_db():
                         name TEXT NOT NULL,
                         exam_type TEXT NOT NULL,
                         description TEXT,
-                        duration INTEGER,
-                        total_marks INTEGER,
-                        state TEXT NOT NULL,
+                        duration INTEGER NOT NULL,
+                        total_marks INTEGER NOT NULL,
+                        exam_path TEXT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        created_by TEXT,
+                        created_by TEXT NOT NULL,
                         FOREIGN KEY (created_by) REFERENCES users (id)
                     )
                 """)
 
         conn.execute("""
-                    CREATE TABLE IF NOT EXISTS exam_questions (
-                        question_id TEXT PRIMARY KEY,
+                    CREATE TABLE IF NOT EXISTS answers (
                         exam_id TEXT NOT NULL,
-                        exam_type TEXT NOT NULL,
                         question_number INTEGER NOT NULL,
-                        question_subject TEXT NOT NULL,
-                        question_text TEXT NOT NULL,
-                        options TEXT NOT NULL,
                         correct_answer TEXT NOT NULL,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
                     )
