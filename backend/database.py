@@ -32,12 +32,37 @@ def init_db():
                         FOREIGN KEY (created_by) REFERENCES users (id)
                     )
                 """)
-
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS answers (
                         exam_id TEXT NOT NULL,
                         question_number INTEGER NOT NULL,
                         correct_answer TEXT NOT NULL,
+                        correct_score INTEGER NOT NULL,
+                        incorrect_score INTEGER NOT NULL,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
+                    )
+                """)
+        conn.execute("""
+                    CREATE TABLE IF NOT EXISTS exam_attempts (
+                        exam_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        start_time TIMESTAMP NOT NULL,
+                        expiry_time TIMESTAMP NOT NULL,
+                        submission_time TIMESTAMP,
+                        evaluation_status TEXT DEFAULT 'pending',
+                        evaluation_time TIMESTAMP,
+                        score INTEGER,
+                        FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id),
+                        FOREIGN KEY (username) REFERENCES users (username)
+                        )
+                """)
+        conn.execute("""
+                    CREATE TABLE IF NOT EXISTS answer_submissions (
+                        exam_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        question_number INTEGER NOT NULL,
+                        answer TEXT NOT NULL,
+                        FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id),
+                        FOREIGN KEY (username) REFERENCES users (username)
                     )
                 """)

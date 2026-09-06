@@ -4,6 +4,8 @@ class Answer(BaseModel):
     exam_id: str
     question_number: int
     correct_answer: str
+    correct_score: int
+    incorrect_score: int
 
 class CatalogItem(BaseModel):
     exam_id: str

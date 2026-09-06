@@ -82,9 +82,9 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, str(exam_path), user_id))
             conn.executemany("""
-                INSERT INTO answers (exam_id, question_number, correct_answer)
-                VALUES (?, ?, ?)
-            """, [(exam_id, answer.question_number, answer.correct_answer) for answer in answers])
+                INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score)
+                VALUES (?, ?, ?, ?, ?)
+            """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score) for answer in answers])
     except Exception as e:
         if exam_path.exists():
             exam_path.unlink()
