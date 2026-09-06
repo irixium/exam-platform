@@ -45,8 +45,10 @@ def init_db():
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
                     )
                 """)
+
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS exam_attempts (
+                        attempt_id TEXT PRIMARY KEY,
                         exam_id TEXT NOT NULL,
                         username TEXT NOT NULL,
                         start_time TIMESTAMP NOT NULL,
