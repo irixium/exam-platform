@@ -1,4 +1,4 @@
-from schemas.auth import SignupRequest, SigninRequest
+from schemas.auth import SignupRequest, SigninRequest, AuthenticatedUser
 from fastapi import Request, HTTPException
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -56,7 +56,7 @@ async def get_current_user(request: Request):
         row = cursor.fetchone()
         if row:
             username = row[0]
-            return (username, username in admins)
+            return AuthenticatedUser(username=username, is_admin=username in admins)
 
     
     raise HTTPException(

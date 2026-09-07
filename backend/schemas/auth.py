@@ -7,3 +7,7 @@ class SignupRequest(BaseModel):
 class SigninRequest(BaseModel):
     username: str
     password: str
+
+class AuthenticatedUser(BaseModel):
+    username: str
+    is_admin: bool
