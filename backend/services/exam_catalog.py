@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from schemas.exam_catalog import CatalogItem, Answer, Question
+from schemas.exam_catalog import CatalogItem, Answer
 from database import get_connection
 from fastapi import UploadFile, File, HTTPException, Form
 import csv
@@ -140,31 +140,7 @@ def get_catalog_items():
             exam_type=row[6]
         ) for row in rows]
 
-def get_question_list(attempt_id: str, username: str):
-    with get_connection() as conn:
-        row = conn.execute("""SELECT exam_id, expiry_time FROM exam_attempts 
-                                   WHERE attempt_id = ? AND username = ? AND SUBMISSION_TIME IS NULL""", (attempt_id, username)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Exam attempt not found")
-        exam_id, expiry_time = row
-        current_time = int(time.time())
-        if current_time > expiry_time:
-            raise HTTPException(status_code=400, detail="Exam attempt has expired")
-        cursor = conn.execute("SELECT * FROM exam_catalog WHERE exam_id = ?", (exam_id,))
-        exam_row = cursor.fetchone()
-        if not exam_row:
-            raise HTTPException(status_code=404, detail="Exam not found")
 
-        cursor = conn.execute("SELECT * FROM answers WHERE exam_id = ?", (exam_id,))
-        answer_rows = cursor.fetchall()
-        return [Question(
-            exam_id=row[0],
-            question_number=row[1],
-            correct_score=row[3],
-            incorrect_score=row[4],
-            question_type=row[5],
-            option_count=row[6]
-        ) for row in answer_rows]
 
 
 
