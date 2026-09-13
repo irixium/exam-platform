@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends
-from schemas.exam_catalog import CatalogItem, ExamUpdateRequest, Answer
+from schemas.exam_catalog import CatalogItem, ExamUpdateRequest, Answer, ExamUploadRequest
 from schemas.auth import AuthenticatedUser
 from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item, update, get_answers
 from services.auth import get_current_user
@@ -8,7 +8,7 @@ from io import StringIO
 router = APIRouter()
 
 @router.post("/upload-exam")
-async def upload_exam(data: CatalogItem = Depends(parse_catalog_item), 
+async def upload_exam(data: ExamUploadRequest = Depends(parse_catalog_item), 
                       exam_doc: UploadFile = File(...), 
                       key_csv: UploadFile = File(...), 
                       user_info: AuthenticatedUser = Depends(get_current_user)):
