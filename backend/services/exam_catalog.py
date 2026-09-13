@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from schemas.exam_catalog import CatalogItem, Answer, ExamUpdateRequest
+from schemas.exam_catalog import CatalogItem, Answer, ExamUpdateRequest, ExamUploadRequest
 from database import get_connection
 from fastapi import UploadFile, File, HTTPException, Form
 import csv
@@ -10,16 +10,14 @@ from pypdf import PdfReader
 import time
 
 def parse_catalog_item(
-    exam_id: str = Form(...),
     name: str = Form(...),
     exam_type: str = Form(...),
     description: str = Form(""),
     duration: int = Form(...),
     total_marks: int = Form(...),
     total_questions: int = Form(...)
-) -> CatalogItem:
-    return CatalogItem(
-        exam_id=exam_id,
+) -> ExamUploadRequest:
+    return ExamUploadRequest(
         name=name,
         exam_type=exam_type,
         description=description,
@@ -29,7 +27,7 @@ def parse_catalog_item(
     )
 
 
-async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, username: str):
+async def upload(data: ExamUploadRequest, exam_doc: UploadFile, key_csv: UploadFile, username: str):
     if exam_doc.content_type != "application/pdf":
         raise HTTPException(400, "File must be a PDF")
     try:
