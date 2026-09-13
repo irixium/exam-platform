@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends
-from schemas.exam_catalog import CatalogItem, ExamUpdateRequest
+from schemas.exam_catalog import CatalogItem, ExamUpdateRequest, Answer
 from schemas.auth import AuthenticatedUser
-from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item, update
+from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item, update, get_answers
 from services.auth import get_current_user
 import csv
 from io import StringIO
@@ -46,3 +46,13 @@ def update_exam(exam_id: str, body: ExamUpdateRequest, user_info: AuthenticatedU
             detail="Only admins can update exams",
         )
     update(username, exam_id, body)
+
+@router.get("/answers/{exam_id}", response_model=list[Answer])
+def get_exam_answers(exam_id: str, user_info: AuthenticatedUser = Depends(get_current_user)):
+    is_admin = user_info.is_admin
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can view answers",
+        )
+    return get_answers(exam_id)

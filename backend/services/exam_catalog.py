@@ -43,24 +43,30 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
 
     if not key_csv.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Invalid file type for answer key. Please upload a CSV file.")
-    with get_connection() as conn:
-        user_id = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
-        if not user_id:
-            raise HTTPException(status_code=400, detail="User not found")
-        user_id = user_id[0]
         
     try:
         content = await key_csv.read()
         content = content.decode("utf-8")
         rows = list(csv.DictReader(StringIO(content)))
+        if len(rows) != data.total_questions:
+            raise HTTPException(status_code=400, detail="Total answers provided don't match total questions")
         exam_id = str(uuid.uuid4())
         answers = [
             Answer(
-                **row,
+                **{**row,
+                   "option_count": row["option_count"] or None},
                 exam_id=exam_id,
             )
             for row in rows
         ]
+        for answer in answers:
+            if answer.question_type == 'MCQ':
+                if not answer.option_count or answer.option_count not in list(range(1,5)):
+                    raise HTTPException(status_code=400, detail="Invalid input")
+            else:
+                if answer.option_count:
+                    raise HTTPException(status_code=400, detail="Invalid input")
+        print('jere')
 
     except Exception as e:
         raise HTTPException(
@@ -78,24 +84,28 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
 
     try:
         with get_connection() as conn:
+            print('ete')
             conn.execute("""
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, total_questions,
                 exam_path, created_by, created_at, updated_by, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.total_questions, 
-                  str(exam_path), user_id, user_id))
+                  str(exam_path), username, username))
+            print(1)
             conn.executemany("""
                 INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score, 
                 question_type, option_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
                     answer.question_type, answer.option_count) for answer in answers])
+            print(2)
+        
     except Exception as e:
         if exam_path.exists():
             exam_path.unlink()
         raise HTTPException(
             status_code=500,
-            detail="Failed to create exam",
+            detail=f"Failed to create exam: {e}",
         )
     return {"message": "Exam uploaded successfully", "exam_id": exam_id, "answers": [answer.dict() for answer in answers]}
 
@@ -125,10 +135,11 @@ def remove(exam_id: str):
             raise HTTPException(status_code=500, detail=f"Error deleting PDF file: {str(e)}")
     return {"message": "Exam deleted successfully"}
 
-def update(username: str,exam_id: str, body: ExamUpdateRequest):
+def update(username: str, exam_id: str, body: ExamUpdateRequest):
     with get_connection() as conn:
         query = "UPDATE exam_catalog SET "
         params = []
+        
         query_name = "name = ?, " if body.name is not None else ""
         params.append(body.name) if body.name is not None else None
         query_exam_type = "exam_type = ?, " if body.exam_type is not None else ""
@@ -138,10 +149,9 @@ def update(username: str,exam_id: str, body: ExamUpdateRequest):
         query_duration = "duration = ?, " if body.duration is not None else ""
         params.append(body.duration) if body.duration is not None else None
         query_updated_at = "updated_at = CURRENT_TIMESTAMP, "
-        query_updated_by = "updated_by = ? "
+        query_updated_by = "updated_by = ?, "
         params.append(username) 
-        query += query_updated_at + query_updated_by
-        query += query_name + query_exam_type + query_description + query_duration
+        query += query_name + query_exam_type + query_description + query_duration + query_updated_at + query_updated_by
         query = query.rstrip(", ") + " WHERE exam_id = ?"
         params.append(exam_id)
         if body.answers is not None:
@@ -149,14 +159,37 @@ def update(username: str,exam_id: str, body: ExamUpdateRequest):
             for answer in answers:
                 if answer.exam_id != exam_id:
                     raise HTTPException(status_code=400, detail="Exam ID in answers does not match the exam ID being updated")
+                if answer.question_type == 'MCQ':
+                    if not answer.option_count or answer.option_count not in list(range(1,5)):
+                        raise HTTPException(status_code=400, detail="Invalid input")
+                else:
+                    if answer.option_count:
+                        raise HTTPException(status_code=400, detail="Invalid input")
         conn.execute(query, params)
-        conn.execute("""
+        conn.executemany("""
                         UPDATE answers SET exam_id = ?, question_number = ?, correct_answer = ?, correct_score = ?, incorrect_score = ?, 
                         question_type = ?, option_count = ?
                         WHERE exam_id = ? AND question_number = ?
                     """, [(answer.exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
                             answer.question_type, answer.option_count) for answer in answers])
 
+def get_answers(exam_id):
+    with get_connection as conn:
+        answers = conn.execute("""SELECT * from answers WHERE exam_id = ?""", [exam_id])
+        answers = answers.fetchall()
+        answers = [
+                    Answer(
+                        exam_id=answer[0],
+                        question_number=answer[1],
+                        correct_answer=answer[2],
+                        correct_score=answer[3],
+                        incorrect_score=answer[4],
+                        question_type=answer[5],
+                        option_count=answer[6],
+                    )
+                    for answer in answers
+                    ]
+        return answers
 
 def get_catalog_items():
     with get_connection() as conn:
