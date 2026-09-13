@@ -20,7 +20,7 @@ def start_exam(exam_id: str, username: str):
             conn.execute("""BEGIN IMMEDIATE""")
             existing_attempt = conn.execute(
                         """
-                        SELECT attempt_id
+                        SELECT attempt_id, expiry_time
                         FROM exam_attempts
                         WHERE exam_id = ?
                         AND username = ?
@@ -31,12 +31,12 @@ def start_exam(exam_id: str, username: str):
                         (exam_id, username, current_time)
                     ).fetchone()
             duration = duration[0] * 60 
-            expiry_time = current_time + duration
             if existing_attempt:
                 conn.rollback()
-                return {"attempt_id": attempt_id, "current_time": current_time, "expiry_time": expiry_time}
+                return {"attempt_id": existing_attempt[0], "current_time": current_time, "expiry_time": existing_attempt[1]}
             
             attempt_id = str(uuid.uuid4())
+            expiry_time = current_time + duration
             conn.execute("""INSERT INTO exam_attempts (attempt_id, exam_id, username, start_time, expiry_time) 
                          VALUES (?, ?, ?, ?, ?)""",
                         (attempt_id, exam_id, username, current_time, expiry_time))

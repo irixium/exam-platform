@@ -7,7 +7,7 @@ from typing import List
 
 router = APIRouter()
 
-@router.get("/start-exam/{exam_id}")
+@router.post("/start-exam/{exam_id}")
 def start(exam_id: str, user_info: AuthenticatedUser = Depends(get_current_user)):
     return start_exam(exam_id, user_info.username)
 
