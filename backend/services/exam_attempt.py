@@ -11,7 +11,6 @@ def start_exam(exam_id: str, username: str):
     current_time = int(time.time())
     
     try:
-        attempt_id = str(uuid.uuid4())
         with get_connection() as conn:
             duration = conn.execute("SELECT duration FROM exam_catalog WHERE exam_id = ?", (exam_id,)).fetchone()
             if not duration:
@@ -31,18 +30,13 @@ def start_exam(exam_id: str, username: str):
                         """,
                         (exam_id, username, current_time)
                     ).fetchone()
-
-            if existing_attempt:
-                conn.rollback()
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "An existing attempt is still active. "
-                        "You cannot start a new attempt until the previous one has expired."
-                    )
-                )
             duration = duration[0] * 60 
             expiry_time = current_time + duration
+            if existing_attempt:
+                conn.rollback()
+                return {"attempt_id": attempt_id, "current_time": current_time, "expiry_time": expiry_time}
+            
+            attempt_id = str(uuid.uuid4())
             conn.execute("""INSERT INTO exam_attempts (attempt_id, exam_id, username, start_time, expiry_time) 
                          VALUES (?, ?, ?, ?, ?)""",
                         (attempt_id, exam_id, username, current_time, expiry_time))
@@ -51,7 +45,7 @@ def start_exam(exam_id: str, username: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error starting exam: {str(e)}")
-    return {"attempt_id": attempt_id}
+    return {"attempt_id": attempt_id, "current_time": current_time, "expiry_time": expiry_time}
 
 
 def fetch_exam_pdf(attempt_id: str, username: str):
