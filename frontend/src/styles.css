@@ -206,23 +206,6 @@ button:disabled { cursor: wait; opacity: 0.45; }
   line-height: 1.65;
   margin: 0;
 }
-.manifesto-meta {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
-  gap: 16px;
-}
-.manifesto-meta div { display: grid; gap: 4px; }
-.manifesto-meta dt {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.manifesto-meta dd { margin: 0; font-size: 0.9rem; font-weight: 600; }
-
 .login-panel {
   display: flex;
   flex-direction: column;
@@ -469,9 +452,6 @@ button:disabled { cursor: wait; opacity: 0.45; }
   margin-bottom: 10px;
   background: transparent;
 }
-.row-state { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; color: var(--faint); text-transform: uppercase; }
-.row-state.published { color: var(--moss); }
-.row-state.draft { color: var(--accent); }
 .row-meta { display: flex; gap: 26px; }
 .row-meta div { display: grid; gap: 2px; }
 .row-meta dt { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
@@ -748,7 +728,6 @@ button:disabled { cursor: wait; opacity: 0.45; }
   .sheet-head, .sheet-body { padding-left: 20px; padding-right: 20px; }
   .hero-stats { grid-template-columns: 1fr 1fr 1fr; }
   .account-name { display: none; }
-  .manifesto-meta { grid-template-columns: 1fr 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

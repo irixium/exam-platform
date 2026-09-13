@@ -23,9 +23,6 @@ type CatalogItem = {
   duration: number;
   total_marks: number;
   total_questions: number;
-  state: "DRAFT" | "PUBLISHED";
-  created_at: string;
-  updated_at: string;
 };
 
 type QuestionType = "MCQ" | "Descriptive";
@@ -36,16 +33,15 @@ type AnswerRow = {
   correct_score: number;
   incorrect_score: number;
   question_type: QuestionType;
-  option_count: number;
+  option_count: number | null;
 };
 
 type ExamQuestion = {
-  exam_id: string;
   question_number: number;
   correct_score: number;
   incorrect_score: number;
   question_type: QuestionType;
-  option_count: number;
+  option_count: number | null;
 };
 
 type UploadForm = {
@@ -55,12 +51,6 @@ type UploadForm = {
   duration: string;
   total_marks: string;
   total_questions: string;
-};
-
-type UploadResponse = {
-  message: string;
-  exam_id: string;
-  answers: AnswerRow[];
 };
 
 type ReviewDraft = {
@@ -83,7 +73,6 @@ const EXAM_TYPES: ExamType[] = ["JEE MAIN", "JEE ADVANCED", "OTHER"];
 function normalizeExam(raw: unknown, index: number): CatalogItem {
   const r = (raw ?? {}) as Record<string, unknown>;
   const examType = EXAM_TYPES.includes(r.exam_type as ExamType) ? (r.exam_type as ExamType) : "OTHER";
-  const state = r.state === "DRAFT" || r.state === "PUBLISHED" ? r.state : "PUBLISHED";
   return {
     exam_id: String(r.exam_id ?? r.id ?? `exam-${index}`),
     name: String(r.name ?? "Untitled examination"),
@@ -91,22 +80,26 @@ function normalizeExam(raw: unknown, index: number): CatalogItem {
     description: String(r.description ?? ""),
     duration: Number(r.duration) || 0,
     total_marks: Number(r.total_marks ?? r.marks) || 0,
-    total_questions: Number(r.total_questions) || 0,
-    state,
-    created_at: String(r.created_at ?? ""),
-    updated_at: String(r.updated_at ?? "")
+    total_questions: Number(r.total_questions) || 0
   };
 }
 
 function normalizeQuestion(raw: unknown): ExamQuestion | null {
   const r = (raw ?? {}) as Record<string, unknown>;
   const question_number = Number(r.question_number);
-  const option_count = Number(r.option_count);
   if (!Number.isFinite(question_number) || question_number <= 0) return null;
-  if (!Number.isFinite(option_count) || option_count <= 0) return null;
   const question_type: QuestionType = r.question_type === "Descriptive" ? "Descriptive" : "MCQ";
+  const rawOption = r.option_count;
+  const option_count =
+    rawOption === null || rawOption === undefined || rawOption === ""
+      ? null
+      : Number(rawOption);
+  if (question_type === "MCQ") {
+    if (!Number.isFinite(option_count as number) || (option_count as number) < 1 || (option_count as number) > 4) return null;
+  } else if (option_count !== null && (!Number.isFinite(option_count) || option_count <= 0)) {
+    return null;
+  }
   return {
-    exam_id: String(r.exam_id ?? ""),
     question_number,
     correct_score: Number(r.correct_score) || 0,
     incorrect_score: Number(r.incorrect_score) || 0,
@@ -115,9 +108,9 @@ function normalizeQuestion(raw: unknown): ExamQuestion | null {
   };
 }
 
-function mcqOptions(count: number): string[] {
+function mcqOptions(count: number | null): string[] {
   const letters: string[] = [];
-  const n = Math.min(Math.max(Math.floor(count) || 0, 0), 26);
+  const n = Math.min(Math.max(Math.floor(count ?? 0) || 0, 0), 26);
   for (let i = 0; i < n; i++) letters.push(String.fromCharCode(65 + i));
   return letters;
 }
@@ -207,6 +200,8 @@ async function parseCsvAnswers(file: File): Promise<AnswerRow[]> {
   if (missing.length > 0) {
     throw new Error(`CSV must contain columns: ${missing.join(", ")}.`);
   }
+  // The answer file must include the option_count column:
+  // required 1-4 for MCQ rows, blank for Descriptive.
   return lines.slice(1).map((line, i) => {
     const cols = splitCsvLine(line);
     const label = `Row ${i + 2}`;
@@ -230,16 +225,23 @@ async function parseCsvAnswers(file: File): Promise<AnswerRow[]> {
     if (rawType !== "mcq" && rawType !== "descriptive") {
       throw new Error(`${label}: question_type must be MCQ or Descriptive.`);
     }
-    const option_count = Number(cols[ocIdx]);
-    if (!Number.isFinite(option_count) || option_count <= 0) {
-      throw new Error(`${label}: option_count must be a positive number.`);
+    const isMcq = rawType === "mcq";
+    const rawOption = (cols[ocIdx] ?? "").trim();
+    let option_count: number | null = null;
+    if (isMcq) {
+      option_count = Number(rawOption);
+      if (!Number.isInteger(option_count) || option_count < 1 || option_count > 4) {
+        throw new Error(`${label}: option_count must be an integer between 1 and 4 for MCQ.`);
+      }
+    } else if (rawOption !== "") {
+      throw new Error(`${label}: option_count must be left blank for Descriptive.`);
     }
     return {
       question_number,
       correct_answer,
       correct_score,
       incorrect_score,
-      question_type: (rawType === "descriptive" ? "Descriptive" : "MCQ") as QuestionType,
+      question_type: (isMcq ? "MCQ" : "Descriptive") as QuestionType,
       option_count
     };
   });
@@ -283,6 +285,8 @@ export default function App() {
   const [login, setLogin] = useState(initialLogin);
   const [loginState, setLoginState] = useState<ApiState>({ kind: "idle", message: "" });
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [exams, setExams] = useState<CatalogItem[]>([]);
@@ -302,6 +306,12 @@ export default function App() {
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editExam, setEditExam] = useState<CatalogItem | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", exam_type: "JEE MAIN" as ExamType, description: "", duration: "" });
+  const [editAnswers, setEditAnswers] = useState<AnswerRow[]>([]);
+  const [editState, setEditState] = useState<ApiState>({ kind: "idle", message: "" });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditLoading, setIsEditLoading] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [activeExam, setActiveExam] = useState<CatalogItem | null>(null);
@@ -325,13 +335,16 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (!isUploadOpen) return;
+    if (!isUploadOpen && !editExam) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsUploadOpen(false);
+      if (event.key === "Escape") {
+        if (isUploadOpen) setIsUploadOpen(false);
+        if (editExam) setEditExam(null);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isUploadOpen]);
+  }, [isUploadOpen, editExam]);
 
   useEffect(() => {
     if (screen !== "exam" || remainingSeconds <= 0) return;
@@ -369,14 +382,14 @@ export default function App() {
         setScreen("login");
         return;
       }
-      setUser({ username: identity.username, is_admin: Boolean(identity.is_admin) });
+      setUser({ username: identity.username, is_admin: identity.is_admin === true });
       setScreen("catalog");
       void loadCatalog();
     } catch (error) {
       setLoginState({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "Backend is unreachable. Check that FastAPI is running."
+          error instanceof Error ? error.message : "Cannot reach the server. Please try again."
       });
       setScreen("login");
     }
@@ -438,6 +451,47 @@ export default function App() {
     }
   }
 
+  async function handleSignUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSigningUp(true);
+    setLoginState({ kind: "idle", message: "" });
+
+    try {
+      const response = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(login)
+      });
+
+      const payload = await readPayload(response);
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.message ?? "Unable to create your account.")
+        );
+      }
+      if (payload?.message === "User already exists") {
+        throw new Error("That username is already taken. Try signing in instead.");
+      }
+
+      setLogin(initialLogin);
+      setAuthMode("signin");
+      setLoginState({
+        kind: "success",
+        message: "Account created. Please sign in with your credentials."
+      });
+    } catch (error) {
+      setLoginState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to create your account."
+      });
+    } finally {
+      setIsSigningUp(false);
+    }
+  }
+
   async function handleSignOut() {
     setIsSigningOut(true);
 
@@ -458,6 +512,8 @@ export default function App() {
       setTypeFilter("ALL");
       setSelectedExamId(null);
       setConfirmDeleteId(null);
+      setEditExam(null);
+      setEditAnswers([]);
       setPdfUrl(null);
       setActiveExam(null);
       setActiveAttemptId(null);
@@ -582,7 +638,7 @@ export default function App() {
       const answers = await parseCsvAnswers(selectedCsv);
       setReview({ name: uploadForm.name.trim(), answers });
       setUploadForm((current) => ({ ...current, total_questions: String(answers.length) }));
-      setUploadState({ kind: "success", message: "Answer key parsed. Review the answers before sealing." });
+      setUploadState({ kind: "success", message: "Answer key ready. Review the answers before publishing." });
     } catch (error) {
       setUploadState({
         kind: "error",
@@ -591,30 +647,6 @@ export default function App() {
     } finally {
       setIsParsing(false);
     }
-  }
-
-  function updateAnswer(index: number, field: keyof AnswerRow, value: string) {
-    setReview((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const answers = current.answers.map((answer, answerIndex) => {
-        if (answerIndex !== index) {
-          return answer;
-        }
-
-        if (field === "question_number" || field === "option_count") {
-          return { ...answer, [field]: Number(value) || 0 };
-        }
-        if (field === "correct_score" || field === "incorrect_score") {
-          return { ...answer, [field]: value === "" || value === "-" ? 0 : Number(value) || 0 };
-        }
-        return { ...answer, [field]: value };
-      });
-
-      return { ...current, answers };
-    });
   }
 
   async function submitReview() {
@@ -630,12 +662,15 @@ export default function App() {
         !Number.isFinite(answer.correct_score) ||
         !Number.isFinite(answer.incorrect_score) ||
         (answer.question_type !== "MCQ" && answer.question_type !== "Descriptive") ||
-        !answer.option_count ||
-        answer.option_count <= 0
+        (answer.question_type === "MCQ"
+          ? !Number.isInteger(answer.option_count) ||
+            (answer.option_count as number) < 1 ||
+            (answer.option_count as number) > 4
+          : answer.option_count !== null)
     );
 
     if (hasIncompleteAnswer) {
-      setUploadState({ kind: "error", message: "Complete every answer row — scores, type and option count — before sealing." });
+      setUploadState({ kind: "error", message: "Something looks incomplete — please re-upload a corrected CSV." });
       return;
     }
 
@@ -647,7 +682,7 @@ export default function App() {
     if (meta.totalQuestions !== review.answers.length) {
       setUploadState({
         kind: "error",
-        message: `Total questions (${meta.totalQuestions}) must match answer rows (${review.answers.length}).`
+        message: `Total questions (${meta.totalQuestions}) must match the number of answers (${review.answers.length}).`
       });
       return;
     }
@@ -656,7 +691,6 @@ export default function App() {
     setUploadState({ kind: "idle", message: "" });
 
     const formData = new FormData();
-    formData.append("exam_id", crypto.randomUUID());
     formData.append("name", uploadForm.name.trim());
     formData.append("exam_type", uploadForm.exam_type);
     formData.append("description", uploadForm.description.trim());
@@ -678,7 +712,7 @@ export default function App() {
       }
 
       await response.json().catch(() => null);
-      setUploadState({ kind: "success", message: "Examination sealed. It now appears in the catalogue." });
+      setUploadState({ kind: "success", message: "Examination published. It now appears in the list." });
       setReview(null);
       setSelectedPdf(null);
       setSelectedCsv(null);
@@ -734,6 +768,159 @@ export default function App() {
     setScreen("catalog");
   }
 
+  async function openEdit(exam: CatalogItem) {
+    setEditExam(exam);
+    setEditForm({
+      name: exam.name,
+      exam_type: exam.exam_type,
+      description: exam.description,
+      duration: String(exam.duration)
+    });
+    setEditAnswers([]);
+    setEditState({ kind: "idle", message: "" });
+    setConfirmDeleteId(null);
+    setIsEditLoading(true);
+    try {
+      const response = await fetch(`/api/answers/${encodeURIComponent(exam.exam_id)}`, {
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const raw = (await response.json()) as unknown;
+      const list = (Array.isArray(raw) ? raw : [])
+        .map((item) => {
+          const r = (item ?? {}) as Record<string, unknown>;
+          const question_number = Number(r.question_number);
+          if (!Number.isFinite(question_number) || question_number <= 0) return null;
+          const correct_answer = String(r.correct_answer ?? "").trim();
+          if (!correct_answer) return null;
+          const question_type: QuestionType = r.question_type === "Descriptive" ? "Descriptive" : "MCQ";
+          const rawOption = r.option_count;
+          const option_count =
+            rawOption === null || rawOption === undefined || rawOption === ""
+              ? null
+              : Number(rawOption);
+          return {
+            question_number,
+            correct_answer,
+            correct_score: Number(r.correct_score) || 0,
+            incorrect_score: Number(r.incorrect_score) || 0,
+            question_type,
+            option_count
+          } as AnswerRow;
+        })
+        .filter((a): a is AnswerRow => a !== null)
+        .sort((a, b) => a.question_number - b.question_number);
+      setEditAnswers(list);
+      if (list.length > 0) {
+        setEditState({ kind: "success", message: `Loaded ${list.length} saved questions.` });
+      }
+    } catch (error) {
+      setEditState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load saved questions. Please try again."
+      });
+    } finally {
+      setIsEditLoading(false);
+    }
+  }
+
+  function closeEdit() {
+    if (!isUpdating && !isEditLoading) setEditExam(null);
+  }
+
+  function updateEditAnswer(index: number, field: keyof AnswerRow, value: string) {
+    setEditAnswers((current) =>
+      current.map((answer, i) => {
+        if (i !== index) return answer;
+        if (field === "question_number") return { ...answer, question_number: Number(value) || 0 };
+        if (field === "correct_score" || field === "incorrect_score")
+          return { ...answer, [field]: value === "" || value === "-" ? 0 : Number(value) || 0 };
+        if (field === "option_count") {
+          if (value.trim() === "") return { ...answer, option_count: null };
+          return { ...answer, option_count: Number(value) || 0 };
+        }
+        if (field === "question_type") {
+          const next = (value === "Descriptive" ? "Descriptive" : "MCQ") as QuestionType;
+          return {
+            ...answer,
+            question_type: next,
+            // Descriptive answers carry no options.
+            option_count: next === "Descriptive" ? null : (answer.option_count ?? 4)
+          };
+        }
+        return { ...answer, [field]: value };
+      })
+    );
+  }
+
+  async function handleUpdate() {
+    if (!editExam) return;
+    if (editForm.name.trim().length < 3) {
+      setEditState({ kind: "error", message: "Name must be at least 3 characters." });
+      return;
+    }
+    const duration = Number(editForm.duration);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      setEditState({ kind: "error", message: "Duration must be a positive number." });
+      return;
+    }
+    for (let i = 0; i < editAnswers.length; i++) {
+      const a = editAnswers[i];
+      const label = `Question ${i + 1}`;
+      if (!a.question_number || !a.correct_answer.trim()) {
+        setEditState({ kind: "error", message: `${label}: question number and correct answer are required.` });
+        return;
+      }
+      if (a.question_type === "MCQ") {
+        if (!Number.isInteger(a.option_count) || (a.option_count as number) < 1 || (a.option_count as number) > 4) {
+          setEditState({ kind: "error", message: `${label}: options must be 1–4 for MCQ.` });
+          return;
+        }
+      } else if (a.option_count !== null) {
+        setEditState({ kind: "error", message: `${label}: options must be left blank for Descriptive.` });
+        return;
+      }
+    }
+    setIsUpdating(true);
+    setEditState({ kind: "idle", message: "" });
+    try {
+      // Always send the answers array, even when empty.
+      const body: Record<string, unknown> = {
+        name: editForm.name.trim(),
+        exam_type: editForm.exam_type,
+        description: editForm.description.trim(),
+        duration,
+        answers: editAnswers.map((a) => ({
+          exam_id: editExam.exam_id,
+          question_number: a.question_number,
+          correct_answer: a.correct_answer.trim(),
+          correct_score: a.correct_score,
+          incorrect_score: a.incorrect_score,
+          question_type: a.question_type,
+          option_count: a.option_count
+        }))
+      };
+      const response = await fetch(`/api/update-exam/${encodeURIComponent(editExam.exam_id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      setEditState({ kind: "success", message: "Examination updated." });
+      setEditExam(null);
+      setEditAnswers([]);
+      void loadCatalog();
+    } catch (error) {
+      setEditState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to update this paper."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   async function handleBegin(exam: CatalogItem) {
     setIsStarting(true);
     setStartingExamId(exam.exam_id);
@@ -741,6 +928,7 @@ export default function App() {
 
     try {
       const startResponse = await fetch(`/api/start-exam/${encodeURIComponent(exam.exam_id)}`, {
+        method: "POST",
         credentials: "include"
       });
 
@@ -750,12 +938,23 @@ export default function App() {
 
       const startPayload = (await startResponse.json().catch(() => null)) as {
         attempt_id?: unknown;
+        current_time?: unknown;
+        expiry_time?: unknown;
       } | null;
       const attemptId =
         typeof startPayload?.attempt_id === "string" ? startPayload.attempt_id : "";
       if (!attemptId) {
-        throw new Error("The server did not return an attempt. Please try starting again.");
+        throw new Error("Could not start this paper. Please try again.");
       }
+      // Remaining time comes from the server so a re-click resumes the
+      // existing attempt instead of restarting the clock. Fall back to the
+      // full exam duration if the timestamps are missing or invalid.
+      const currentTime = Number(startPayload?.current_time);
+      const expiryTime = Number(startPayload?.expiry_time);
+      const resumedSeconds =
+        Number.isFinite(currentTime) && Number.isFinite(expiryTime)
+          ? Math.floor(expiryTime - currentTime)
+          : Math.floor(Number(exam.duration) || 0) * 60;
 
       const pdfResponse = await fetch(`/api/fetch_exam/${encodeURIComponent(attemptId)}`, {
         credentials: "include"
@@ -767,7 +966,7 @@ export default function App() {
 
       const blob = await pdfResponse.blob();
       if (!blob.size) {
-        throw new Error("The question paper came back empty. Ask your administrator to re-upload it.");
+        throw new Error("The question paper is empty. Please contact your administrator.");
       }
 
       const questionsResponse = await fetch(`/api/question-list/${encodeURIComponent(attemptId)}`, {
@@ -785,7 +984,7 @@ export default function App() {
         .sort((a, b) => a.question_number - b.question_number);
 
       if (questions.length === 0) {
-        throw new Error("No questions were returned for this paper. Ask your administrator to check the answer key.");
+        throw new Error("No questions were found for this paper. Please contact your administrator.");
       }
 
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -795,7 +994,7 @@ export default function App() {
       setExamQuestions(questions);
       setCandidateAnswers({});
       setExamState({ kind: "idle", message: "" });
-      setRemainingSeconds(Math.max(0, Math.floor(Number(exam.duration) || 0) * 60));
+      setRemainingSeconds(Math.max(0, resumedSeconds));
       setScreen("exam");
     } catch (error) {
       setCatalogState({
@@ -844,7 +1043,7 @@ export default function App() {
 
       setExamState({
         kind: "success",
-        message: `Submitted ${payload.length} of ${examQuestions.length} answers. Your responses are sealed.`
+        message: `Submitted ${payload.length} of ${examQuestions.length} answers.`
       });
     } catch (error) {
       setExamState({
@@ -871,7 +1070,7 @@ export default function App() {
   const stats = useMemo(
     () => ({
       total: exams.length,
-      published: exams.filter((e) => e.state === "PUBLISHED").length,
+      questions: exams.reduce((sum, e) => sum + (Number(e.total_questions) || 0), 0),
       minutes: exams.reduce((sum, e) => sum + (Number(e.duration) || 0), 0)
     }),
     [exams]
@@ -910,40 +1109,29 @@ export default function App() {
               Write well. <em>Prevail.</em>
             </h1>
             <p className="manifesto-sub">
-              A composed space for serious assessment. Timed papers, clean typography,
-              and nothing between you and the questions.
+              A composed space for serious assessment.
             </p>
-            <dl className="manifesto-meta">
-              <div>
-                <dt>Format</dt>
-                <dd>MCQ · Timed</dd>
-              </div>
-              <div>
-                <dt>Authority</dt>
-                <dd>Server-side clock</dd>
-              </div>
-              <div>
-                <dt>Session</dt>
-                <dd>Private &amp; sealed</dd>
-              </div>
-            </dl>
           </section>
 
           <section className="login-panel" aria-labelledby="login-title">
             <div className="login-panel-inner">
               <div className="login-index">
-                <strong id="login-title">Sign in</strong>
+                <strong id="login-title">{authMode === "signup" ? "Sign up" : "Sign in"}</strong>
                 <span>02 / Access</span>
               </div>
 
-              <form onSubmit={handleSignIn}>
+              <form onSubmit={authMode === "signup" ? handleSignUp : handleSignIn}>
                 <label className="field">
                   <span>Username</span>
                   <input
                     autoComplete="username"
                     name="username"
-                    placeholder="e.g. aarav.sharma"
+                    placeholder="e.g. aarav_sharma"
                     required
+                    minLength={authMode === "signup" ? 5 : undefined}
+                    maxLength={authMode === "signup" ? 20 : undefined}
+                    pattern={authMode === "signup" ? "[A-Za-z0-9_]+" : undefined}
+                    title={authMode === "signup" ? "5–20 characters: letters, numbers, underscore." : undefined}
                     value={login.username}
                     onChange={(event) => setLogin({ ...login, username: event.target.value })}
                   />
@@ -951,17 +1139,29 @@ export default function App() {
                 <label className="field">
                   <span>Password</span>
                   <input
-                    autoComplete="current-password"
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
                     name="password"
                     type="password"
                     placeholder="••••••••••"
                     required
+                    minLength={authMode === "signup" ? 8 : undefined}
+                    title={authMode === "signup" ? "At least 8 characters." : undefined}
                     value={login.password}
                     onChange={(event) => setLogin({ ...login, password: event.target.value })}
                   />
                 </label>
-                <button className="btn-ink btn-full" disabled={isSigningIn} type="submit">
-                  {isSigningIn ? "Verifying…" : "Enter the hall →"}
+                <button
+                  className="btn-ink btn-full"
+                  disabled={isSigningIn || isSigningUp}
+                  type="submit"
+                >
+                  {authMode === "signup"
+                    ? isSigningUp
+                      ? "Creating…"
+                      : "Create account →"
+                    : isSigningIn
+                      ? "Verifying…"
+                      : "Enter the hall →"}
                 </button>
               </form>
 
@@ -972,9 +1172,35 @@ export default function App() {
               ) : null}
 
               <p className="login-hint">
-                No self-registration. Accounts are issued by your administrator.
-                <br />
-                Sessions expire on sign out.
+                {authMode === "signup" ? (
+                  <>
+                    Already have an account?{" "}
+                    <button
+                      className="link-btn"
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("signin");
+                        setLoginState({ kind: "idle", message: "" });
+                      }}
+                    >
+                      Sign in
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    New here?{" "}
+                    <button
+                      className="link-btn"
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("signup");
+                        setLoginState({ kind: "idle", message: "" });
+                      }}
+                    >
+                      Create an account
+                    </button>
+                  </>
+                )}
               </p>
             </div>
           </section>
@@ -1019,7 +1245,7 @@ export default function App() {
             </div>
             <dl className="hero-stats exam-counters">
               <div>
-                <dt>Allowed</dt>
+                <dt>Duration</dt>
                 <dd>{activeExam.duration}m</dd>
               </div>
               <div>
@@ -1041,7 +1267,7 @@ export default function App() {
 
           {expired ? (
             <p className="status error" role="status">
-              Time is up. Submit now — the server clock decides whether late answers are accepted.
+              Time is up. Please submit now — late answers may not be accepted.
             </p>
           ) : null}
 
@@ -1049,7 +1275,7 @@ export default function App() {
             <article className="exam-paper" aria-label="Question paper">
               <div className="exam-paper-head">
                 <span>Question paper</span>
-                <span>Scrollable · PDF</span>
+                <span>Scrollable</span>
               </div>
               {pdfUrl ? (
                 <iframe
@@ -1081,7 +1307,7 @@ export default function App() {
                         <strong>Q{question.question_number}</strong>
                         <span className="row-kind" style={{ marginBottom: 0 }}>
                           {question.question_type}
-                          {question.question_type === "MCQ" ? ` · ${question.option_count} opts` : ""}
+                          {question.question_type === "MCQ" ? ` · ${question.option_count} options` : ""}
                         </span>
                       </div>
                       <p className="answer-scores">
@@ -1150,7 +1376,6 @@ export default function App() {
 
         <footer className="footer">
           <span>Test Taker — Examination Atelier</span>
-          <span>Set in Fraunces &amp; Inter · MMXXVI</span>
         </footer>
       </main>
     );
@@ -1184,14 +1409,13 @@ export default function App() {
         <section className="hero" aria-labelledby="catalog-title">
           <div>
             <p className="eyebrow">
-              <b>Catalogue</b> — {new Date().getFullYear()} Session
+              <b>Catalogue</b>
             </p>
             <h1 id="catalog-title">
               Assessments, <em>composed</em> with intent.
             </h1>
             <p className="hero-copy">
-              Each paper is timed by the server and sealed until you begin.
-              Choose a paper below — the clock starts only when you confirm.
+              Choose a paper below. The timer starts when you begin.
             </p>
           </div>
           <div className="hero-side">
@@ -1201,8 +1425,8 @@ export default function App() {
                 <dd>{pad(stats.total)}</dd>
               </div>
               <div>
-                <dt>Live</dt>
-                <dd>{pad(stats.published)}</dd>
+                <dt>Questions</dt>
+                <dd>{pad(stats.questions)}</dd>
               </div>
               <div>
                 <dt>Minutes</dt>
@@ -1262,7 +1486,7 @@ export default function App() {
               <h3>{exams.length === 0 ? "No papers on the desk." : "No papers match that filter."}</h3>
               <p>
                 {exams.length === 0
-                  ? "New examinations appear here as soon as they are published. Check back before your session."
+                  ? "New examinations appear here as soon as they are published. Check back later."
                   : "Clear the search or choose a different series to see the full catalogue."}
               </p>
             </div>
@@ -1291,13 +1515,7 @@ export default function App() {
                   >
                     <span className="row-num">{pad(i + 1)}</span>
                     <div>
-                      {user?.is_admin ? null : <span className="row-kind">{exam.exam_type}</span>}
-                      {user?.is_admin ? (
-                        <span className="row-kind">
-                          {exam.exam_type} ·{" "}
-                          <span className={`row-state ${exam.state.toLowerCase()}`}>{exam.state}</span>
-                        </span>
-                      ) : null}
+                      <span className="row-kind">{exam.exam_type}</span>
                       <h3 className="row-title">{exam.name}</h3>
                       {exam.description ? <p className="row-desc">{exam.description}</p> : null}
                     </div>
@@ -1346,30 +1564,32 @@ export default function App() {
                             style={{
                               display: "flex",
                               alignItems: "baseline",
-                              justifyContent: "space-between",
+                              justifyContent: "flex-end",
                               gap: "16px",
                               flexWrap: "wrap"
                             }}
                           >
-                            <span
-                              style={{
-                                fontFamily: "var(--mono)",
-                                fontSize: "11px",
-                                letterSpacing: "0.14em",
-                                textTransform: "uppercase",
-                                color: "var(--muted)"
-                              }}
-                            >
-                              {exam.exam_id}
-                            </span>
-                            <button
-                              className="link-btn"
-                              disabled={isDeleting}
-                              onClick={() => setConfirmDeleteId(exam.exam_id)}
-                              type="button"
-                            >
-                              Delete paper
-                            </button>
+                            <div style={{ display: "flex", gap: "18px", alignItems: "center" }}>
+                              <button
+                                className="link-btn"
+                                disabled={isDeleting || isUpdating}
+                                onClick={() => void openEdit(exam)}
+                                type="button"
+                                title="Update exam details and questions"
+                                aria-label={`Update ${exam.name}`}
+                              >
+                                <span aria-hidden="true" style={{ marginRight: "6px" }}>✎</span>
+                                Update paper
+                              </button>
+                              <button
+                                className="link-btn"
+                                disabled={isDeleting}
+                                onClick={() => setConfirmDeleteId(exam.exam_id)}
+                                type="button"
+                              >
+                                Delete paper
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <div
@@ -1426,7 +1646,6 @@ export default function App() {
 
       <footer className="footer">
         <span>Test Taker — Examination Atelier</span>
-        <span>Set in Fraunces &amp; Inter · MMXXVI</span>
       </footer>
 
       {isUploadOpen ? (
@@ -1441,12 +1660,12 @@ export default function App() {
             <div className="sheet-head">
               <div>
                 <p className="eyebrow">
-                  <b>{review ? "02" : "01"}</b> — {review ? "Review key" : "New examination"}
+                  <b>{review ? "02" : "01"}</b> — {review ? "Review answers" : "New examination"}
                 </p>
                 <h2 id="upload-title">{review ? "Review questions" : "Compose examination"}</h2>
                 <div className="sheet-steps">
-                  <span className={!review ? "active" : ""}>01 Metadata</span>
-                  <span className={review ? "active" : ""}>02 Key</span>
+                  <span className={!review ? "active" : ""}>01 Details</span>
+                  <span className={review ? "active" : ""}>02 Answers</span>
                 </div>
               </div>
               <button
@@ -1583,7 +1802,7 @@ export default function App() {
                     <span className="drop-zone-sub">
                       {selectedCsv
                         ? "Click to replace · CSV only"
-                        : "CSV only · number, answer, scores, type, options"}
+                        : "CSV only · 1–4 options for MCQ, blank for Descriptive"}
                     </span>
                   </button>
 
@@ -1604,67 +1823,29 @@ export default function App() {
               ) : (
                 <div>
                   <p className="review-summary">
-                    {review.name} <span>{review.answers.length} answers</span>
+                    {review.name} <span>{review.answers.length} answers · read-only</span>
+                  </p>
+                  <p className="eyebrow" style={{ margin: "0 0 16px" }}>
+                    Review only — to fix a mistake, go back and re-upload a corrected CSV.
                   </p>
                   <div className="question-list">
                     {review.answers.map((answer, index) => (
                       <article className="question-editor" key={`${answer.question_number}-${index}`}>
                         <div className="question-editor-header">
-                          <strong>Q{index + 1}</strong>
-                          <label>
-                            <span>No.</span>
-                            <input
-                              min="1"
-                              type="number"
-                              value={answer.question_number}
-                              onChange={(event) => updateAnswer(index, "question_number", event.target.value)}
-                            />
-                          </label>
+                          <strong>Q{answer.question_number}</strong>
+                          <span className="row-kind" style={{ marginBottom: 0 }}>
+                            {answer.question_type}
+                            {answer.question_type === "MCQ"
+                              ? ` · ${answer.option_count} options`
+                              : ""}
+                          </span>
                         </div>
-                        <label>
-                          <span>Correct answer</span>
-                          <input
-                            value={answer.correct_answer}
-                            onChange={(event) => updateAnswer(index, "correct_answer", event.target.value)}
-                          />
-                        </label>
-                        <div className="upload-fields" style={{ gap: "16px" }}>
-                          <label>
-                            <span>Correct score</span>
-                            <input
-                              type="number"
-                              value={answer.correct_score}
-                              onChange={(event) => updateAnswer(index, "correct_score", event.target.value)}
-                            />
-                          </label>
-                          <label>
-                            <span>Incorrect score</span>
-                            <input
-                              type="number"
-                              value={answer.incorrect_score}
-                              onChange={(event) => updateAnswer(index, "incorrect_score", event.target.value)}
-                            />
-                          </label>
-                          <label>
-                            <span>Type</span>
-                            <select
-                              value={answer.question_type}
-                              onChange={(event) => updateAnswer(index, "question_type", event.target.value)}
-                            >
-                              <option value="MCQ">MCQ</option>
-                              <option value="Descriptive">Descriptive</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>Option count</span>
-                            <input
-                              min="1"
-                              type="number"
-                              value={answer.option_count}
-                              onChange={(event) => updateAnswer(index, "option_count", event.target.value)}
-                            />
-                          </label>
-                        </div>
+                        <p className="row-desc">
+                          Answer: <strong>{answer.correct_answer}</strong>
+                        </p>
+                        <p className="answer-scores">
+                          +{answer.correct_score} · {answer.incorrect_score}
+                        </p>
                       </article>
                     ))}
                   </div>
@@ -1675,7 +1856,7 @@ export default function App() {
                   ) : null}
                   <div className="sheet-actions">
                     <button className="btn-line" onClick={() => setReview(null)} type="button">
-                      ← Back
+                      ← Re-upload CSV
                     </button>
                     <button
                       className="btn-accent"
@@ -1683,11 +1864,182 @@ export default function App() {
                       onClick={() => void submitReview()}
                       type="button"
                     >
-                      {isUploading ? "Sealing…" : "Seal examination"}
+                      {isUploading ? "Publishing…" : "Publish examination"}
                     </button>
                   </div>
                 </div>
               )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {editExam ? (
+        <div className="modal-backdrop" onMouseDown={closeEdit}>
+          <section
+            aria-labelledby="edit-title"
+            aria-modal="true"
+            className="upload-sheet"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="sheet-head">
+              <div>
+                <p className="eyebrow">
+                  <b>✎</b> — Update examination
+                </p>
+                <h2 id="edit-title">Update paper</h2>
+              </div>
+              <button
+                aria-label="Close update dialog"
+                className="link-btn"
+                disabled={isUpdating || isEditLoading}
+                onClick={closeEdit}
+                type="button"
+              >
+                Close ✕
+              </button>
+            </div>
+
+            <div className="sheet-body">
+              <div className="upload-fields">
+                <label className="wide-field">
+                  <span>Paper title</span>
+                  <input
+                    maxLength={100}
+                    value={editForm.name}
+                    onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Series</span>
+                  <select
+                    value={editForm.exam_type}
+                    onChange={(event) => setEditForm({ ...editForm, exam_type: event.target.value as ExamType })}
+                  >
+                    <option value="JEE MAIN">JEE MAIN</option>
+                    <option value="JEE ADVANCED">JEE ADVANCED</option>
+                    <option value="OTHER">OTHER</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Duration · minutes</span>
+                  <input
+                    min="1"
+                    type="number"
+                    value={editForm.duration}
+                    onChange={(event) => setEditForm({ ...editForm, duration: event.target.value })}
+                  />
+                </label>
+                <label className="wide-field">
+                  <span>Brief</span>
+                  <textarea
+                    maxLength={500}
+                    rows={3}
+                    value={editForm.description}
+                    onChange={(event) => setEditForm({ ...editForm, description: event.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: "16px",
+                  margin: "26px 0 14px",
+                  flexWrap: "wrap"
+                }}
+              >
+                <p className="eyebrow" style={{ margin: 0 }}>
+                  <b>Questions</b> — {isEditLoading ? "loading…" : `${editAnswers.length} questions`}
+                </p>
+              </div>
+              <p className="eyebrow" style={{ margin: "0 0 16px" }}>
+                Saved questions load automatically — edit the values below. For MCQ, options must be
+                1–4; for Descriptive, leave options blank. Total marks and questions cannot be changed
+                after creation.
+              </p>
+
+              <div className="question-list">
+                {editAnswers.map((answer, index) => (
+                  <article className="question-editor" key={`edit-${index}`}>
+                    <div className="question-editor-header">
+                      <strong>Q{answer.question_number}</strong>
+                      <span className="row-kind" style={{ marginBottom: 0 }}>
+                        {answer.question_type}
+                      </span>
+                    </div>
+                    <label>
+                      <span>Correct answer</span>
+                      <input
+                        value={answer.correct_answer}
+                        onChange={(event) => updateEditAnswer(index, "correct_answer", event.target.value)}
+                      />
+                    </label>
+                    <div className="upload-fields" style={{ gap: "16px" }}>
+                      <label>
+                        <span>Correct score</span>
+                        <input
+                          type="number"
+                          value={answer.correct_score}
+                          onChange={(event) => updateEditAnswer(index, "correct_score", event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        <span>Incorrect score</span>
+                        <input
+                          type="number"
+                          value={answer.incorrect_score}
+                          onChange={(event) => updateEditAnswer(index, "incorrect_score", event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        <span>Type</span>
+                        <select
+                          value={answer.question_type}
+                          onChange={(event) => updateEditAnswer(index, "question_type", event.target.value)}
+                        >
+                          <option value="MCQ">MCQ</option>
+                          <option value="Descriptive">Descriptive</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Options{answer.question_type === "MCQ" ? " · 1–4" : " · blank for Descriptive"}</span>
+                        <input
+                          min="1"
+                          max="4"
+                          type="number"
+                          placeholder={answer.question_type === "MCQ" ? "1–4" : "Blank"}
+                          value={answer.option_count ?? ""}
+                          disabled={answer.question_type !== "MCQ"}
+                          onChange={(event) => updateEditAnswer(index, "option_count", event.target.value)}
+                        />
+                      </label>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {editState.message ? (
+                <p className={`status ${editState.kind}`} role="status">
+                  {editState.message}
+                </p>
+              ) : null}
+              <div className="sheet-actions">
+                <button className="btn-line" onClick={closeEdit} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="btn-accent"
+                  disabled={isUpdating || isEditLoading}
+                  onClick={() => void handleUpdate()}
+                  type="button"
+                >
+                  {isUpdating ? "Saving…" : isEditLoading ? "Loading…" : "Save changes"}
+                </button>
+              </div>
             </div>
           </section>
         </div>
