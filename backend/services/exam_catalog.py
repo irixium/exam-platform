@@ -66,7 +66,8 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
             else:
                 if answer.option_count:
                     raise HTTPException(status_code=400, detail="Invalid input")
-
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=400,
@@ -150,27 +151,29 @@ def update(username: str, exam_id: str, body: ExamUpdateRequest):
         query += query_name + query_exam_type + query_description + query_duration + query_updated_at + query_updated_by
         query = query.rstrip(", ") + " WHERE exam_id = ?"
         params.append(exam_id)
-        if body.answers is not None:
-            answers = body.answers
-            for answer in answers:
-                if answer.exam_id != exam_id:
-                    raise HTTPException(status_code=400, detail="Exam ID in answers does not match the exam ID being updated")
-                if answer.question_type == 'MCQ':
-                    if not answer.option_count or answer.option_count not in list(range(1,5)):
-                        raise HTTPException(status_code=400, detail="Invalid input")
-                else:
-                    if answer.option_count:
-                        raise HTTPException(status_code=400, detail="Invalid input")
-        conn.execute(query, params)
+        answers = body.answers or []
+        for answer in answers:
+            if answer.exam_id != exam_id:
+                raise HTTPException(status_code=400, detail="Exam ID in answers does not match the exam ID being updated")
+            if answer.question_type == 'MCQ':
+                if not answer.option_count or answer.option_count not in list(range(1,5)):
+                    raise HTTPException(status_code=400, detail="Invalid input")
+            else:
+                if answer.option_count:
+                    raise HTTPException(status_code=400, detail="Invalid input")
+        cursor = conn.execute(query, params)
+        if not cursor.rowcount:
+            raise HTTPException(status_code=404, detail="No exam for this exam_id exists")
         conn.executemany("""
-                        UPDATE answers SET exam_id = ?, question_number = ?, correct_answer = ?, correct_score = ?, incorrect_score = ?, 
+                        UPDATE answers SET correct_answer = ?, correct_score = ?, incorrect_score = ?, 
                         question_type = ?, option_count = ?
                         WHERE exam_id = ? AND question_number = ?
-                    """, [(answer.exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
-                            answer.question_type, answer.option_count) for answer in answers])
+                    """, [(answer.correct_answer, answer.correct_score, answer.incorrect_score,
+                            answer.question_type, answer.option_count, answer.exam_id, answer.question_number,) 
+                            for answer in answers])
 
 def get_answers(exam_id):
-    with get_connection as conn:
+    with get_connection() as conn:
         answers = conn.execute("""SELECT * from answers WHERE exam_id = ?""", [exam_id])
         answers = answers.fetchall()
         answers = [
