@@ -17,6 +17,7 @@ def init_db():
                 password_hash TEXT NOT NULL
             )
         """)
+
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS exam_catalog (
                         exam_id TEXT PRIMARY KEY,
@@ -31,10 +32,11 @@ def init_db():
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         created_by TEXT NOT NULL,
                         updated_by TEXT NOT NULL,
-                        FOREIGN KEY (created_by) REFERENCES users (id),
-                        FOREIGN KEY (updated_by) REFERENCES users (id)
+                        FOREIGN KEY (created_by) REFERENCES users (username),
+                        FOREIGN KEY (updated_by) REFERENCES users (username)
                     )
                 """)
+
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS answers (
                         exam_id TEXT NOT NULL,
@@ -43,7 +45,7 @@ def init_db():
                         correct_score INTEGER NOT NULL,
                         incorrect_score INTEGER NOT NULL,
                         question_type TEXT NOT NULL CHECK (question_type IN ('MCQ', 'Descriptive')),
-                        option_count INTEGER NOT NULL,
+                        option_count INTEGER,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
                     )
                 """)

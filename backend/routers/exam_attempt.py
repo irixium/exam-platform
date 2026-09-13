@@ -12,7 +12,7 @@ def start(exam_id: str, user_info: AuthenticatedUser = Depends(get_current_user)
     return start_exam(exam_id, user_info.username)
 
 @router.get("/fetch_exam/{attempt_id}")
-def fetch_exam(attempt_id: str, user_info: AuthenticatedUser = Depends(get_current_user)):
+def fetch_exam_paper(attempt_id: str, user_info: AuthenticatedUser = Depends(get_current_user)):
     return fetch_exam_pdf(attempt_id, user_info.username)
 
 @router.get("/question-list/{attempt_id}")

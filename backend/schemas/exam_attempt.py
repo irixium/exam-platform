@@ -9,4 +9,4 @@ class ExamQuestionMetadata(BaseModel):
     correct_score: int
     incorrect_score: int
     question_type: str = Field(["MCQ", "Descriptive"], description="Type of the question")
-    option_count: int = Field(gt=0)
+    option_count: int | None = Field(gt=0)
