@@ -66,7 +66,6 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
             else:
                 if answer.option_count:
                     raise HTTPException(status_code=400, detail="Invalid input")
-        print('jere')
 
     except Exception as e:
         raise HTTPException(
@@ -84,21 +83,18 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
 
     try:
         with get_connection() as conn:
-            print('ete')
             conn.execute("""
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, total_questions,
                 exam_path, created_by, created_at, updated_by, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.total_questions, 
                   str(exam_path), username, username))
-            print(1)
             conn.executemany("""
                 INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score, 
                 question_type, option_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
                     answer.question_type, answer.option_count) for answer in answers])
-            print(2)
         
     except Exception as e:
         if exam_path.exists():
