@@ -30,7 +30,9 @@ def init_db():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         created_by TEXT NOT NULL,
-                        FOREIGN KEY (created_by) REFERENCES users (id)
+                        updated_by TEXT NOT NULL,
+                        FOREIGN KEY (created_by) REFERENCES users (id),
+                        FOREIGN KEY (updated_by) REFERENCES users (id)
                     )
                 """)
         conn.execute("""

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from schemas.exam_catalog import CatalogItem, Answer
+from schemas.exam_catalog import CatalogItem, Answer, ExamUpdateRequest
 from database import get_connection
 from fastapi import UploadFile, File, HTTPException, Form
 import csv
@@ -80,17 +80,16 @@ async def upload(data: CatalogItem, exam_doc: UploadFile, key_csv: UploadFile, u
         with get_connection() as conn:
             conn.execute("""
                 INSERT INTO exam_catalog (exam_id, name, exam_type, description, duration, total_marks, total_questions,
-                exam_path, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                exam_path, created_by, created_at, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
             """, (exam_id, data.name, data.exam_type, data.description, data.duration, data.total_marks, data.total_questions, 
-                  str(exam_path), user_id))
+                  str(exam_path), user_id, user_id))
             conn.executemany("""
                 INSERT INTO answers (exam_id, question_number, correct_answer, correct_score, incorrect_score, 
                 question_type, option_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [(exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
                     answer.question_type, answer.option_count) for answer in answers])
-            print('here')
     except Exception as e:
         if exam_path.exists():
             exam_path.unlink()
@@ -125,6 +124,39 @@ def remove(exam_id: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting PDF file: {str(e)}")
     return {"message": "Exam deleted successfully"}
+
+def update(username: str,exam_id: str, body: ExamUpdateRequest):
+    with get_connection() as conn:
+        query = "UPDATE exam_catalog SET "
+        params = []
+        query_name = "name = ?, " if body.name is not None else ""
+        params.append(body.name) if body.name is not None else None
+        query_exam_type = "exam_type = ?, " if body.exam_type is not None else ""
+        params.append(body.exam_type) if body.exam_type is not None else None
+        query_description = "description = ?, " if body.description is not None else ""
+        params.append(body.description) if body.description is not None else None
+        query_duration = "duration = ?, " if body.duration is not None else ""
+        params.append(body.duration) if body.duration is not None else None
+        query_updated_at = "updated_at = CURRENT_TIMESTAMP, "
+        query_updated_by = "updated_by = ? "
+        params.append(username) 
+        query += query_updated_at + query_updated_by
+        query += query_name + query_exam_type + query_description + query_duration
+        query = query.rstrip(", ") + " WHERE exam_id = ?"
+        params.append(exam_id)
+        if body.answers is not None:
+            answers = body.answers
+            for answer in answers:
+                if answer.exam_id != exam_id:
+                    raise HTTPException(status_code=400, detail="Exam ID in answers does not match the exam ID being updated")
+        conn.execute(query, params)
+        conn.execute("""
+                        UPDATE answers SET exam_id = ?, question_number = ?, correct_answer = ?, correct_score = ?, incorrect_score = ?, 
+                        question_type = ?, option_count = ?
+                        WHERE exam_id = ? AND question_number = ?
+                    """, [(answer.exam_id, answer.question_number, answer.correct_answer, answer.correct_score, answer.incorrect_score,
+                            answer.question_type, answer.option_count) for answer in answers])
+
 
 def get_catalog_items():
     with get_connection() as conn:

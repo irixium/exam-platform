@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends
-from schemas.exam_catalog import CatalogItem
+from schemas.exam_catalog import CatalogItem, ExamUpdateRequest
 from schemas.auth import AuthenticatedUser
-from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item
+from services.exam_catalog import get_catalog_items, remove, upload, parse_catalog_item, update
 from services.auth import get_current_user
 import csv
 from io import StringIO
@@ -29,7 +29,7 @@ def delete_exam(exam_id: str, user_info: AuthenticatedUser = Depends(get_current
             status_code=403,
             detail="Only admins can delete exams",
         )
-    result = remove(exam_id)
+    remove(exam_id)
     return {"message": "Exam deleted successfully"}
 
 
@@ -37,3 +37,12 @@ def delete_exam(exam_id: str, user_info: AuthenticatedUser = Depends(get_current
 def get_catalog():
     return get_catalog_items()
 
+@router.patch("/update-exam/{exam_id}")
+def update_exam(exam_id: str, body: ExamUpdateRequest, user_info: AuthenticatedUser = Depends(get_current_user)):
+    username, is_admin = user_info.username, user_info.is_admin
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can update exams",
+        )
+    update(username, exam_id, body)
