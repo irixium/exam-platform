@@ -5,7 +5,7 @@ from schemas.auth import AuthenticatedUser
 from services.auth import get_current_user
 from app_secrets import session_secret_key
 from database import init_db
-from database import get_connection
+
 init_db()
 
 app = FastAPI()
