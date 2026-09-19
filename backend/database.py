@@ -74,6 +74,7 @@ def init_db():
                         question_number INTEGER NOT NULL,
                         answer TEXT NOT NULL,
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id),
-                        FOREIGN KEY (username) REFERENCES users (username)
+                        FOREIGN KEY (username) REFERENCES users (username),
+                        UNIQUE (attempt_id, question_number)
                     )
                 """)
