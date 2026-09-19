@@ -58,6 +58,39 @@ type ReviewDraft = {
   answers: AnswerRow[];
 };
 
+type ExamResult = {
+  username: string;
+  attempt_id: string;
+  exam_id: string;
+  name: string;
+  exam_type: string;
+  description: string;
+  duration: number;
+  total_marks: number;
+  total_questions: number;
+  score: number;
+  submission_time: number;
+};
+
+type ExamQuestionResult = {
+  question_number: number;
+  answer: string | null;
+  correct_answer: string;
+  correct_score: number;
+  incorrect_score: number;
+  question_type: string;
+  option_count: number | null;
+  score: number;
+  is_correct: boolean;
+  is_attempted: boolean;
+};
+
+type DetailedExamResult = ExamResult & {
+  question_results: ExamQuestionResult[];
+};
+
+type ResultsView = "mine" | "all";
+
 const initialLogin = { username: "", password: "" };
 const initialUploadForm: UploadForm = {
   name: "",
@@ -121,6 +154,71 @@ function formatClock(totalSeconds: number) {
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+}
+
+function normalizeResult(raw: unknown): ExamResult | null {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const attempt_id = String(r.attempt_id ?? "");
+  const exam_id = String(r.exam_id ?? "");
+  if (!attempt_id || !exam_id) return null;
+  return {
+    username: String(r.username ?? ""),
+    attempt_id,
+    exam_id,
+    name: String(r.name ?? "Untitled examination"),
+    exam_type: String(r.exam_type ?? "OTHER"),
+    description: String(r.description ?? ""),
+    duration: Number(r.duration) || 0,
+    total_marks: Number(r.total_marks) || 0,
+    total_questions: Number(r.total_questions) || 0,
+    score: Number(r.score) || 0,
+    submission_time: Number(r.submission_time) || 0
+  };
+}
+
+function normalizeResultDetail(raw: unknown): DetailedExamResult | null {
+  const base = normalizeResult(raw);
+  if (!base) return null;
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(r.question_results) ? r.question_results : [];
+  const question_results: ExamQuestionResult[] = list
+    .map((item) => {
+      const q = (item ?? {}) as Record<string, unknown>;
+      const question_number = Number(q.question_number);
+      if (!Number.isFinite(question_number) || question_number <= 0) return null;
+      const rawAnswer = q.answer;
+      return {
+        question_number,
+        answer: rawAnswer === null || rawAnswer === undefined ? null : String(rawAnswer),
+        correct_answer: String(q.correct_answer ?? ""),
+        correct_score: Number(q.correct_score) || 0,
+        incorrect_score: Number(q.incorrect_score) || 0,
+        question_type: String(q.question_type ?? "MCQ"),
+        option_count:
+          q.option_count === null || q.option_count === undefined || q.option_count === ""
+            ? null
+            : Number(q.option_count),
+        score: Number(q.score) || 0,
+        is_correct: q.is_correct === true || q.is_correct === 1,
+        is_attempted: q.is_attempted === true || q.is_attempted === 1
+      } as ExamQuestionResult;
+    })
+    .filter((q): q is ExamQuestionResult => q !== null)
+    .sort((a, b) => a.question_number - b.question_number);
+  return { ...base, question_results };
+}
+
+function formatDateTime(epochSeconds: number) {
+  if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) return "—";
+  const d = new Date(epochSeconds * 1000);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 async function readPayload(response: Response) {
@@ -273,7 +371,7 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<"checking" | "login" | "catalog" | "exam">("checking");
+  const [screen, setScreen] = useState<"checking" | "login" | "catalog" | "exam" | "results" | "result-detail">("checking");
   const [theme, setTheme] = useState<Theme>(() => {
     const storedTheme = localStorage.getItem("theme");
     return storedTheme === "light" || storedTheme === "dark"
@@ -324,6 +422,17 @@ export default function App() {
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [results, setResults] = useState<ExamResult[]>([]);
+  const [resultsState, setResultsState] = useState<ApiState>({ kind: "idle", message: "" });
+  const [isResultsLoading, setIsResultsLoading] = useState(false);
+  const [resultsView, setResultsView] = useState<ResultsView>("mine");
+  const [lastSubmittedAttemptId, setLastSubmittedAttemptId] = useState<string | null>(null);
+  const [resultDetail, setResultDetail] = useState<DetailedExamResult | null>(null);
+  const [resultDetailState, setResultDetailState] = useState<ApiState>({ kind: "idle", message: "" });
+  const [isResultDetailLoading, setIsResultDetailLoading] = useState(false);
+  const [resultPdfUrl, setResultPdfUrl] = useState<string | null>(null);
+  const [resultPdfState, setResultPdfState] = useState<ApiState>({ kind: "idle", message: "" });
+  const [isResultPdfLoading, setIsResultPdfLoading] = useState(false);
 
   useEffect(() => {
     void loadSession();
@@ -359,6 +468,12 @@ export default function App() {
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     };
   }, [pdfUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (resultPdfUrl) URL.revokeObjectURL(resultPdfUrl);
+    };
+  }, [resultPdfUrl]);
 
   async function loadSession() {
     setScreen("checking");
@@ -506,6 +621,7 @@ export default function App() {
       }
 
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (resultPdfUrl) URL.revokeObjectURL(resultPdfUrl);
       setUser(null);
       setExams([]);
       setQuery("");
@@ -520,6 +636,14 @@ export default function App() {
       setExamQuestions([]);
       setCandidateAnswers({});
       setExamState({ kind: "idle", message: "" });
+      setResults([]);
+      setResultsState({ kind: "idle", message: "" });
+      setResultsView("mine");
+      setLastSubmittedAttemptId(null);
+      setResultDetail(null);
+      setResultDetailState({ kind: "idle", message: "" });
+      setResultPdfUrl(null);
+      setResultPdfState({ kind: "idle", message: "" });
       setScreen("login");
     } catch (error) {
       setCatalogState({
@@ -765,7 +889,31 @@ export default function App() {
     setCandidateAnswers({});
     setExamState({ kind: "idle", message: "" });
     setRemainingSeconds(0);
+    setLastSubmittedAttemptId(null);
     setScreen("catalog");
+  }
+
+  function goCatalog() {
+    if (resultPdfUrl) URL.revokeObjectURL(resultPdfUrl);
+    setResultsState({ kind: "idle", message: "" });
+    setResultDetail(null);
+    setResultDetailState({ kind: "idle", message: "" });
+    setResultPdfUrl(null);
+    setResultPdfState({ kind: "idle", message: "" });
+    setScreen("catalog");
+  }
+
+  function goResults(view: ResultsView | null = null) {
+    const nextView = view ?? resultsView;
+    const effectiveView: ResultsView = user?.is_admin ? nextView : "mine";
+    if (resultPdfUrl) URL.revokeObjectURL(resultPdfUrl);
+    setResultsView(effectiveView);
+    setResultDetail(null);
+    setResultDetailState({ kind: "idle", message: "" });
+    setResultPdfUrl(null);
+    setResultPdfState({ kind: "idle", message: "" });
+    setScreen("results");
+    void loadResults(effectiveView);
   }
 
   async function openEdit(exam: CatalogItem) {
@@ -1041,6 +1189,7 @@ export default function App() {
         throw new Error(await responseMessage(response));
       }
 
+      setLastSubmittedAttemptId(activeAttemptId);
       setExamState({
         kind: "success",
         message: `Submitted ${payload.length} of ${examQuestions.length} answers.`
@@ -1052,6 +1201,86 @@ export default function App() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function loadResults(view: ResultsView) {
+    setIsResultsLoading(true);
+    setResultsState({ kind: "idle", message: "" });
+    try {
+      const url = view === "all" ? "/api/results?view=admin" : "/api/results";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(await responseMessage(response));
+      }
+      const raw = (await response.json()) as unknown;
+      const list = (Array.isArray(raw) ? raw : [])
+        .map(normalizeResult)
+        .filter((r): r is ExamResult => r !== null)
+        .sort((a, b) => b.submission_time - a.submission_time);
+      setResults(list);
+    } catch (error) {
+      setResults([]);
+      setResultsState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load results."
+      });
+    } finally {
+      setIsResultsLoading(false);
+    }
+  }
+
+  async function openResultDetail(attemptId: string) {
+    if (resultPdfUrl) URL.revokeObjectURL(resultPdfUrl);
+    setResultDetail(null);
+    setResultDetailState({ kind: "idle", message: "" });
+    setResultPdfUrl(null);
+    setResultPdfState({ kind: "idle", message: "" });
+    setIsResultPdfLoading(true);
+    setIsResultDetailLoading(true);
+    setScreen("result-detail");
+    try {
+      const response = await fetch(`/api/result/${encodeURIComponent(attemptId)}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await responseMessage(response));
+      }
+      const raw = (await response.json()) as unknown;
+      const detail = normalizeResultDetail(raw);
+      if (!detail) {
+        throw new Error("The result could not be understood. Please try again.");
+      }
+      setResultDetail(detail);
+    } catch (error) {
+      setResultDetailState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load this result."
+      });
+    } finally {
+      setIsResultDetailLoading(false);
+    }
+    try {
+      const pdfResponse = await fetch(
+        `/api/result/fetch_exam/${encodeURIComponent(attemptId)}`,
+        { credentials: "include" }
+      );
+      if (!pdfResponse.ok) {
+        throw new Error(await responseMessage(pdfResponse));
+      }
+      const blob = await pdfResponse.blob();
+      if (!blob.size) {
+        throw new Error("The question paper is empty. Please contact your administrator.");
+      }
+      setResultPdfUrl(URL.createObjectURL(blob));
+    } catch (error) {
+      setResultPdfUrl(null);
+      setResultPdfState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to load the question paper."
+      });
+    } finally {
+      setIsResultPdfLoading(false);
     }
   }
 
@@ -1075,6 +1304,26 @@ export default function App() {
     }),
     [exams]
   );
+
+  const resultStats = useMemo(() => {
+    const attempts = results.length;
+    const papers = new Set(results.map((r) => r.exam_id)).size;
+    const totalScore = results.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
+    return { attempts, papers, totalScore };
+  }, [results]);
+
+  const resultDetailStats = useMemo(() => {
+    if (!resultDetail) return { correct: 0, incorrect: 0, skipped: 0, answered: 0 };
+    let correct = 0;
+    let incorrect = 0;
+    let skipped = 0;
+    for (const q of resultDetail.question_results) {
+      if (!q.is_attempted) skipped += 1;
+      else if (q.is_correct) correct += 1;
+      else incorrect += 1;
+    }
+    return { correct, incorrect, skipped, answered: correct + incorrect };
+  }, [resultDetail]);
 
   if (screen === "checking") {
     return (
@@ -1223,9 +1472,17 @@ export default function App() {
             Test&nbsp;Taker
           </span>
           <div className="account">
+            <nav className="topnav" aria-label="Primary">
+              <button className="link-btn" onClick={exitExam} type="button">
+                Catalogue
+              </button>
+              <button className="link-btn" onClick={() => goResults()} type="button">
+                Results
+              </button>
+            </nav>
             <span className="account-name">
               <b>{user?.username}</b>
-              {" · Candidate"}
+              {user?.is_admin ? " · Admin" : " · Candidate"}
             </span>
             <button className="link-btn" onClick={exitExam} type="button">
               Exit hall
@@ -1354,6 +1611,18 @@ export default function App() {
               {examState.message ? (
                 <p className={`status ${examState.kind}`} role="status">
                   {examState.message}
+                  {examState.kind === "success" && lastSubmittedAttemptId ? (
+                    <>
+                      {" "}
+                      <button
+                        className="link-btn"
+                        onClick={() => void openResultDetail(lastSubmittedAttemptId)}
+                        type="button"
+                      >
+                        View result →
+                      </button>
+                    </>
+                  ) : null}
                 </p>
               ) : null}
 
@@ -1361,17 +1630,453 @@ export default function App() {
                 <button className="link-btn" onClick={exitExam} type="button">
                   ← Catalogue
                 </button>
-                <button
-                  className="btn-accent"
-                  disabled={isSubmitting}
-                  onClick={() => void handleSubmitExam()}
-                  type="button"
-                >
-                  {isSubmitting ? "Submitting…" : "Submit answers"}
-                </button>
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                  {examState.kind === "success" && lastSubmittedAttemptId ? (
+                    <button
+                      className="btn-line"
+                      onClick={() => void openResultDetail(lastSubmittedAttemptId)}
+                      type="button"
+                    >
+                      View result
+                    </button>
+                  ) : null}
+                  <button
+                    className="btn-accent"
+                    disabled={isSubmitting}
+                    onClick={() => void handleSubmitExam()}
+                    type="button"
+                  >
+                    {isSubmitting ? "Submitting…" : "Submit answers"}
+                  </button>
+                </div>
               </div>
             </aside>
           </div>
+        </div>
+
+        <footer className="footer">
+          <span>Test Taker — Examination Atelier</span>
+        </footer>
+      </main>
+    );
+  }
+
+  if (screen === "results") {
+    const isAdminView = resultsView === "all";
+    return (
+      <main className="catalog-page">
+        <header className="topbar">
+          <span className="wordmark">
+            <i aria-hidden="true" />
+            Test&nbsp;Taker
+          </span>
+          <div className="account">
+            <nav className="topnav" aria-label="Primary">
+              <button className="link-btn" onClick={goCatalog} type="button">
+                Catalogue
+              </button>
+              <button
+                className="link-btn active"
+                onClick={() => goResults()}
+                type="button"
+                aria-current="page"
+              >
+                Results
+              </button>
+            </nav>
+            <span className="account-name">
+              <b>{user?.username}</b>
+              {user?.is_admin ? " · Admin" : " · Candidate"}
+            </span>
+            <button
+              className="link-btn"
+              disabled={isSigningOut}
+              onClick={() => void handleSignOut()}
+              type="button"
+            >
+              {isSigningOut ? "Signing out" : "Sign out"}
+            </button>
+            <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+          </div>
+        </header>
+
+        <div className="catalog-inner">
+          <section className="hero" aria-labelledby="results-title">
+            <div>
+              <p className="eyebrow">
+                <b>Results</b> — {isAdminView ? "All attempts" : "My attempts"}
+              </p>
+              <h1 id="results-title">
+                Scores, <em>settled</em> and sealed.
+              </h1>
+              <p className="hero-copy">
+                {user?.is_admin && isAdminView
+                  ? "Administrator view — every evaluated attempt across all candidates. Select a row for the full breakdown."
+                  : "Every evaluated attempt of yours. Select a row for the full per-question breakdown."}
+              </p>
+            </div>
+            <div className="hero-side">
+              <dl className="hero-stats">
+                <div>
+                  <dt>Attempts</dt>
+                  <dd>{pad(resultStats.attempts)}</dd>
+                </div>
+                <div>
+                  <dt>Papers</dt>
+                  <dd>{pad(resultStats.papers)}</dd>
+                </div>
+                <div>
+                  <dt>Score</dt>
+                  <dd>{resultStats.totalScore}</dd>
+                </div>
+              </dl>
+              {user?.is_admin ? (
+                <div className="segmented" role="tablist" aria-label="Results scope">
+                  <button
+                    className={`segmented-btn ${!isAdminView ? "active" : ""}`}
+                    onClick={() => {
+                      setResultsView("mine");
+                      void loadResults("mine");
+                    }}
+                    role="tab"
+                    aria-selected={!isAdminView}
+                    type="button"
+                  >
+                    Mine
+                  </button>
+                  <button
+                    className={`segmented-btn ${isAdminView ? "active" : ""}`}
+                    onClick={() => {
+                      setResultsView("all");
+                      void loadResults("all");
+                    }}
+                    role="tab"
+                    aria-selected={isAdminView}
+                    type="button"
+                    title="Sends view=admin to /results"
+                  >
+                    All · Admin
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section aria-live="polite">
+            <div className="toolbar">
+              <p className="eyebrow" style={{ margin: 0 }}>
+                {isResultsLoading
+                  ? "Loading results…"
+                  : `${results.length} attempt${results.length === 1 ? "" : "s"}${
+                      isAdminView ? " · view=admin" : ""
+                    }`}
+              </p>
+              <button
+                className="link-btn"
+                disabled={isResultsLoading}
+                onClick={() => void loadResults(resultsView)}
+                type="button"
+              >
+                {isResultsLoading ? "Refreshing…" : "Refresh ⟳"}
+              </button>
+            </div>
+
+            {resultsState.message ? (
+              <p className={`status ${resultsState.kind}`} role="status">
+                {resultsState.message}
+              </p>
+            ) : null}
+
+            {!isResultsLoading && !resultsState.message && results.length === 0 ? (
+              <div className="empty">
+                <p className="eyebrow">
+                  <b>∅</b> — No results
+                </p>
+                <h3>No evaluated attempts yet.</h3>
+                <p>Submit a paper and your score will appear here once evaluation completes.</p>
+              </div>
+            ) : null}
+
+            {results.length > 0 ? (
+              <div className="exam-index">
+                <div className="index-head result-head" aria-hidden="true">
+                  <span>No.</span>
+                  <span>Paper</span>
+                  <span>Attempt</span>
+                  <span>Score</span>
+                </div>
+                {results.map((result, i) => (
+                  <article
+                    className="exam-row result-row"
+                    key={result.attempt_id}
+                    onClick={() => void openResultDetail(result.attempt_id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <span className="row-num">{pad(i + 1)}</span>
+                    <div className="result-paper">
+                      <span className="row-kind">{result.exam_type}</span>
+                      <h3 className="row-title">{result.name}</h3>
+                      {result.description ? (
+                        <p className="row-desc">{result.description}</p>
+                      ) : null}
+                      <p className="result-ids">
+                        attempt {result.attempt_id.slice(0, 8)} · exam {result.exam_id.slice(0, 8)}
+                      </p>
+                    </div>
+                    <dl className="row-meta result-meta">
+                      {isAdminView || user?.is_admin ? (
+                        <div>
+                          <dt>Candidate</dt>
+                          <dd>{result.username}</dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt>Submitted</dt>
+                        <dd title={formatDateTime(result.submission_time)}>{formatDateTime(result.submission_time)}</dd>
+                      </div>
+                      <div>
+                        <dt>Questions</dt>
+                        <dd>{result.total_questions}</dd>
+                      </div>
+                      <div>
+                        <dt>Duration</dt>
+                        <dd>{result.duration} min</dd>
+                      </div>
+                    </dl>
+                    <div className="row-action result-score">
+                      <strong>
+                        {result.score}
+                        <span> / {result.total_marks}</span>
+                      </strong>
+                      <span className="arrow" aria-hidden="true">
+                        →
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        <footer className="footer">
+          <span>Test Taker — Examination Atelier</span>
+        </footer>
+      </main>
+    );
+  }
+
+  if (screen === "result-detail") {
+    const pct =
+      resultDetail && resultDetail.total_marks > 0
+        ? Math.round((resultDetail.score / resultDetail.total_marks) * 100)
+        : 0;
+    return (
+      <main className="catalog-page">
+        <header className="topbar">
+          <span className="wordmark">
+            <i aria-hidden="true" />
+            Test&nbsp;Taker
+          </span>
+          <div className="account">
+            <nav className="topnav" aria-label="Primary">
+              <button className="link-btn" onClick={goCatalog} type="button">
+                Catalogue
+              </button>
+              <button
+                className="link-btn active"
+                onClick={() => goResults()}
+                type="button"
+                aria-current="page"
+              >
+                Results
+              </button>
+            </nav>
+            <span className="account-name">
+              <b>{user?.username}</b>
+              {user?.is_admin ? " · Admin" : " · Candidate"}
+            </span>
+            <button
+              className="link-btn"
+              disabled={isSigningOut}
+              onClick={() => void handleSignOut()}
+              type="button"
+            >
+              {isSigningOut ? "Signing out" : "Sign out"}
+            </button>
+            <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+          </div>
+        </header>
+
+        <div className="catalog-inner">
+          <div className="toolbar" style={{ paddingBottom: 0 }}>
+            <button className="link-btn" onClick={() => goResults()} type="button">
+              ← All results
+            </button>
+            <button
+              className="link-btn"
+              disabled={isResultDetailLoading}
+              onClick={() => resultDetail && void openResultDetail(resultDetail.attempt_id)}
+              type="button"
+            >
+              {isResultDetailLoading ? "Reloading…" : "Reload ⟳"}
+            </button>
+          </div>
+
+          {isResultDetailLoading && !resultDetail ? (
+            <p className="eyebrow" style={{ marginTop: "32px" }}>
+              Loading result…
+            </p>
+          ) : null}
+
+          {resultDetailState.message ? (
+            <p className={`status ${resultDetailState.kind}`} role="status">
+              {resultDetailState.message}
+            </p>
+          ) : null}
+
+          {!isResultDetailLoading && !resultDetail && !resultDetailState.message ? (
+            <div className="empty">
+              <p className="eyebrow">
+                <b>∅</b> — Nothing here
+              </p>
+              <h3>This result could not be found.</h3>
+              <p>It may belong to another candidate, or the attempt id may be invalid.</p>
+            </div>
+          ) : null}
+
+          {resultDetail ? (
+            <>
+              <section className="hero" aria-labelledby="result-title">
+                <div>
+                  <p className="eyebrow">
+                    <b>Result</b> — {resultDetail.exam_type} · {formatDateTime(resultDetail.submission_time)}
+                  </p>
+                  <h1 id="result-title">{resultDetail.name}</h1>
+                  {resultDetail.description ? (
+                    <p className="hero-copy">{resultDetail.description}</p>
+                  ) : null}
+                  <p className="result-sub">
+                    {resultDetail.username} · {resultDetail.total_questions} questions ·{" "}
+                    {resultDetail.duration} min
+                  </p>
+                </div>
+                <dl className="hero-stats result-hero-stats">
+                  <div>
+                    <dt>Score</dt>
+                    <dd>
+                      {resultDetail.score} / {resultDetail.total_marks}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Percentage</dt>
+                    <dd>{pct}%</dd>
+                  </div>
+                  <div>
+                    <dt>Correct</dt>
+                    <dd>
+                      {pad(resultDetailStats.correct)}/{pad(resultDetail.question_results.length)}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              <div className="exam-grid result-grid">
+                <article className="exam-paper" aria-label="Question paper">
+                  <div className="exam-paper-head">
+                    <span>Question paper</span>
+                    <span>Scrollable</span>
+                  </div>
+                  {isResultPdfLoading ? (
+                    <p className="eyebrow result-paper-loading">Loading paper…</p>
+                  ) : resultPdfUrl && resultDetail ? (
+                    <iframe
+                      className="exam-paper-frame"
+                      src={resultPdfUrl}
+                      title={`${resultDetail.name} — question paper`}
+                    />
+                  ) : resultPdfState.message ? (
+                    <p className={`status ${resultPdfState.kind}`} role="status">
+                      {resultPdfState.message}
+                    </p>
+                  ) : (
+                    <p className="eyebrow result-paper-loading">Paper unavailable.</p>
+                  )}
+                </article>
+
+                <section aria-label="Per-question breakdown">
+                  <div className="exam-side-head">
+                    <p className="eyebrow">
+                      <b>Sheet</b> — Per-question breakdown
+                    </p>
+                    <span className="exam-side-count">
+                      {resultDetailStats.correct} correct · {resultDetailStats.incorrect} wrong ·{" "}
+                      {resultDetailStats.skipped} skipped
+                    </span>
+                  </div>
+                <div className="answer-list" style={{ marginTop: "16px" }}>
+                  {resultDetail.question_results.map((q) => {
+                    const verdict = !q.is_attempted
+                      ? "Skipped"
+                      : q.is_correct
+                        ? "Correct"
+                        : "Incorrect";
+                    const verdictClass = !q.is_attempted
+                      ? "skipped"
+                      : q.is_correct
+                        ? "correct"
+                        : "incorrect";
+                    const earnedClass = !q.is_attempted
+                      ? "neutral"
+                      : q.is_correct
+                        ? "positive"
+                        : "negative";
+                    const penaltyLabel =
+                      q.incorrect_score <= 0 ? `${q.incorrect_score}` : `-${q.incorrect_score}`;
+                    return (
+                      <article className="question-editor result-qcard" key={q.question_number}>
+                        <div className="question-editor-header">
+                          <strong>Q{q.question_number}</strong>
+                          <span className="result-badges">
+                            <span className="row-kind" style={{ marginBottom: 0 }}>
+                              {q.question_type}
+                              {q.question_type === "MCQ" && q.option_count !== null
+                                ? ` · ${q.option_count} options`
+                                : ""}
+                            </span>
+                            <span className={`verdict ${verdictClass}`}>{verdict}</span>
+                          </span>
+                        </div>
+                        <div className="result-answers">
+                          <div>
+                            <span>Your answer</span>
+                            <strong>{q.is_attempted ? (q.answer ?? "—") : "Skipped"}</strong>
+                            {!q.is_attempted ? <em>not attempted</em> : null}
+                          </div>
+                          <div>
+                            <span>Correct answer</span>
+                            <strong>{q.correct_answer}</strong>
+                          </div>
+                          <div>
+                            <span>Score</span>
+                            <strong className={`earned ${earnedClass}`}>
+                              {q.score > 0 ? `+${q.score}` : `${q.score}`}
+                            </strong>
+                          </div>
+                        </div>
+                        <p className="mark-scheme" aria-label="Marking scheme">
+                          <span className="mark-plus">+{q.correct_score}</span>
+                          <span className="mark-sep">/</span>
+                          <span className="mark-minus">{penaltyLabel}</span>
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+                </section>
+              </div>
+            </>
+          ) : null}
         </div>
 
         <footer className="footer">
@@ -1389,6 +2094,14 @@ export default function App() {
           Test&nbsp;Taker
         </span>
         <div className="account">
+          <nav className="topnav" aria-label="Primary">
+            <button className="link-btn active" onClick={goCatalog} type="button" aria-current="page">
+              Catalogue
+            </button>
+            <button className="link-btn" onClick={() => goResults()} type="button">
+              Results
+            </button>
+          </nav>
           <span className="account-name">
             <b>{user?.username}</b>
             {user?.is_admin ? " · Admin" : " · Candidate"}
