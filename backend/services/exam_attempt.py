@@ -1,7 +1,7 @@
 import time
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
-from typing import List
+from typing import List, Any
 from pydantic import BaseModel
 from database import get_connection
 import uuid
@@ -63,6 +63,14 @@ def submit_exam(attempt_id: str, username: str, answers: List[SubmittedAnswer]):
     with get_connection() as conn:
         exam_id = get_valid_exam_id(attempt_id, username, conn, grace_seconds=20)
         try:
+            questions_submitted = set()
+            unique_answers = []
+            for answer in answers:
+                question_number = answer.question_number
+                if not question_number in questions_submitted and answer.answer.strip(): #dedupe + check if answer is truthy
+                    questions_submitted.add(question_number)
+                    unique_answers.append(answer)
+            answers = unique_answers
             submission_time = int(time.time())
             cursor = conn.execute("""UPDATE exam_attempts SET submission_time = ? WHERE
                                     attempt_id = ? AND username = ? AND SUBMISSION_TIME IS NULL""",
@@ -82,7 +90,7 @@ def get_question_list(attempt_id: str, username: str):
         exam_id = get_valid_exam_id(attempt_id, username, conn)
         cursor = conn.execute("""SELECT 
         exam_id, question_number, correct_score, incorrect_score, question_type, option_count 
-        FROM answers WHERE exam_id = ?""", (exam_id,))
+        FROM answers WHERE exam_id = ? ORDER BY question_number""", (exam_id,))
         answer_rows = cursor.fetchall()
         return [ExamQuestionMetadata(
             exam_id=row[0],
@@ -93,7 +101,7 @@ def get_question_list(attempt_id: str, username: str):
             option_count=row[5]
         ) for row in answer_rows]
 
-def get_valid_exam_id(attempt_id: str, username: str, conn: any, grace_seconds: int = 0):
+def get_valid_exam_id(attempt_id: str, username: str, conn: Any, grace_seconds: int = 0):
     row = conn.execute("""SELECT exam_id, expiry_time FROM exam_attempts 
                 WHERE attempt_id = ? AND username = ? AND SUBMISSION_TIME IS NULL""", (attempt_id, username)).fetchone()
     if not row:
@@ -102,10 +110,4 @@ def get_valid_exam_id(attempt_id: str, username: str, conn: any, grace_seconds: 
     current_time = int(time.time())
     if current_time > expiry_time + grace_seconds:
         raise HTTPException(status_code=400, detail="Exam attempt has expired")
-    assert_exam_exists(exam_id, conn)
     return exam_id
-
-def assert_exam_exists(exam_id: str, conn: any):
-    row = conn.execute("SELECT 1 FROM exam_catalog WHERE exam_id = ?", (exam_id,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Exam not found")
