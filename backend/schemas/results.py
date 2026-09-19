@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 
 class ExamResult(BaseModel):
+    username: str
     attempt_id: str
     exam_id: str
     name: str = Field(min_length=3, max_length=100)
@@ -14,11 +15,18 @@ class ExamResult(BaseModel):
 
 class ExamQuestionResult(BaseModel):
     question_number: int
+    answer: str | None
     correct_answer: str
-    submitted_answer: str
-    is_correct: bool
     correct_score: int
     incorrect_score: int
+    question_type: str
+    option_count: int | None
+    score: int
+    is_correct: bool
+    is_attempted: bool
+    
+
 
 class DetailedExamResult(ExamResult):
     question_results: list[ExamQuestionResult]
+
