@@ -3,8 +3,9 @@ from typing import Literal
 from schemas.auth import AuthenticatedUser
 from schemas.results import ExamResult, DetailedExamResult
 from services.auth import get_current_user
-from services.results import get_results, get_attempt_result
+from services.results import get_results, get_attempt_result, fetch_exam_pdf
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 router = APIRouter()
 
 
@@ -25,3 +26,8 @@ def result_attempt(attempt_id: str,
                    user_info: AuthenticatedUser = Depends(get_current_user)) -> DetailedExamResult:
     username, is_admin = user_info.username, user_info.is_admin
     return get_attempt_result(username, attempt_id, is_admin)
+
+@router.get("/result/fetch_exam/{attempt_id}")
+def fetch_exam_paper(attempt_id: str, user_info: AuthenticatedUser = Depends(get_current_user)) -> FileResponse:
+    username, is_admin = user_info.username, user_info.is_admin
+    return fetch_exam_pdf(attempt_id, username, is_admin)

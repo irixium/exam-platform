@@ -1,6 +1,7 @@
 from database import get_connection
 from schemas.results import ExamResult, ExamQuestionResult, DetailedExamResult
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 
 def get_results(username: str, admin_view: bool):
     with get_connection() as conn:
@@ -119,4 +120,21 @@ def get_attempt_result(username: str, attempt_id: str, is_admin: bool):
                                 username=exam_result[9],
                                 question_results=question_results,
                             )
+
+def fetch_exam_pdf(attempt_id: str, username: str, is_admin: bool):
+    with get_connection() as conn:
+        params = [attempt_id]
+        query = """SELECT ec.exam_path FROM exam_catalog ec JOIN exam_attempts ea
+        on ec.exam_id = ea.exam_id WHERE ea.attempt_id = ? AND ea.submission_time is NOT NULL"""
+        if not is_admin:
+            query += " and ea.username = ?"
+            params.append(username)
+        cursor = conn.execute(query, params)
+        exam_row = cursor.fetchone()
+        if not exam_row:
+            raise HTTPException(status_code=404, detail="Exam not found or attempt doesn't match user")
+        exam_path = exam_row[0]
+        
+    return FileResponse(path=exam_path, media_type='application/pdf', 
+                        headers={"Content-Disposition": "inline"})
     
