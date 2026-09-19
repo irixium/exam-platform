@@ -16,8 +16,6 @@ app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    if isinstance(exc, HTTPException):
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 app.include_router(auth.router)
