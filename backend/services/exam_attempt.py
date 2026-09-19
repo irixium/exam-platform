@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from database import get_connection
 import uuid
 from schemas.exam_attempt import SubmittedAnswer, ExamQuestionMetadata
+from pathlib import Path
 
 def start_exam(exam_id: str, username: str):
     current_time = int(time.time())
@@ -56,6 +57,8 @@ def fetch_exam_pdf(attempt_id: str, username: str):
         if not exam_row:
             raise HTTPException(status_code=404, detail="Exam not found")
         exam_path = exam_row[0]
+        if not Path(exam_path).is_file():
+            raise HTTPException(status_code=404, detail="Exam file not found")
         
     return FileResponse(path=exam_path, media_type='application/pdf', 
                         headers={"Content-Disposition": "inline"})

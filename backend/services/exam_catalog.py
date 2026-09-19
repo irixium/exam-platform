@@ -29,13 +29,13 @@ def parse_catalog_item(
 
 async def upload(data: ExamUploadRequest, exam_doc: UploadFile, key_csv: UploadFile, username: str):
     if exam_doc.content_type != "application/pdf":
-        raise HTTPException(400, "File must be a PDF")
+        raise HTTPException(status_code=400, detail="File must be a PDF")
     try:
         await exam_doc.seek(0)
         reader = PdfReader(exam_doc.file)
         len(reader.pages)
     except Exception:
-        raise HTTPException(400, "Invalid or corrupted PDF")
+        raise HTTPException(status_code=400, detail="Invalid or corrupted PDF")
     finally:
         await exam_doc.seek(0)
 
@@ -169,11 +169,14 @@ def update(username: str, exam_id: str, body: ExamUpdateRequest):
                     """, [(answer.correct_answer, answer.correct_score, answer.incorrect_score,
                             answer.question_type, answer.option_count, answer.exam_id, answer.question_number,) 
                             for answer in answers])
+        return {"message": "Exam updated successfully"}
 
 def get_answers(exam_id):
     with get_connection() as conn:
         answers = conn.execute("""SELECT * from answers WHERE exam_id = ?""", [exam_id])
         answers = answers.fetchall()
+        if not answers:
+            raise HTTPException(status_code=404, detail="Exam not found")
         answers = [
                     Answer(
                         exam_id=answer[0],

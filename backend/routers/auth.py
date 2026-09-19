@@ -6,12 +6,10 @@ router = APIRouter()
 @router.post("/signin")
 def signIn(data: SigninRequest, request: Request):
     result = validateUser(data)
-    if not result:
-        return {"error": "Invalid credentials"}
     request.session["user_id"] = result["user_id"]
     return {"message": "User signed in successfully"}
 
-@router.post("/signup")
+@router.post("/signup", status_code=201)
 def signUp(data: SignupRequest):
     return addUser(data)
 

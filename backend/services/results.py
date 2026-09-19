@@ -48,8 +48,8 @@ def get_attempt_result(username: str, attempt_id: str, is_admin: bool):
         exam_result = cursor.fetchone()
         if not exam_result:
             raise HTTPException(
-                        status_code=400,
-                        detail="Invalid parameters. No such attempt exists for this user"
+                        status_code=404,
+                        detail="Attempt not found"
                     )
         exam_id = exam_result[0]
         cursor = conn.execute("""
@@ -122,6 +122,7 @@ def get_attempt_result(username: str, attempt_id: str, is_admin: bool):
                             )
 
 def fetch_exam_pdf(attempt_id: str, username: str, is_admin: bool):
+    from pathlib import Path
     with get_connection() as conn:
         params = [attempt_id]
         query = """SELECT ec.exam_path FROM exam_catalog ec JOIN exam_attempts ea
@@ -134,6 +135,8 @@ def fetch_exam_pdf(attempt_id: str, username: str, is_admin: bool):
         if not exam_row:
             raise HTTPException(status_code=404, detail="Exam not found or attempt doesn't match user")
         exam_path = exam_row[0]
+        if not Path(exam_path).is_file():
+            raise HTTPException(status_code=404, detail="Exam file not found")
         
     return FileResponse(path=exam_path, media_type='application/pdf', 
                         headers={"Content-Disposition": "inline"})

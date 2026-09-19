@@ -29,8 +29,7 @@ def delete_exam(exam_id: str, user_info: AuthenticatedUser = Depends(get_current
             status_code=403,
             detail="Only admins can delete exams",
         )
-    remove(exam_id)
-    return {"message": "Exam deleted successfully"}
+    return remove(exam_id)
 
 
 @router.get("/exam-list", response_model=list[CatalogItem], dependencies=[Depends(get_current_user)])
@@ -45,7 +44,7 @@ def update_exam(exam_id: str, body: ExamUpdateRequest, user_info: AuthenticatedU
             status_code=403,
             detail="Only admins can update exams",
         )
-    update(username, exam_id, body)
+    return update(username, exam_id, body)
 
 @router.get("/answers/{exam_id}", response_model=list[Answer])
 def get_exam_answers(exam_id: str, user_info: AuthenticatedUser = Depends(get_current_user)):

@@ -20,13 +20,13 @@ def validateUser(data: SigninRequest):
         cursor = conn.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
         row = cursor.fetchone()
         if row is None:
-            return False
+            raise HTTPException(status_code=401, detail="Invalid credentials")
         stored_hashed_password = row[2]
         try:
             ph.verify(stored_hashed_password, password)
             return {"user_id": row[0], "username": row[1]}
         except VerifyMismatchError:
-            return False
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
 def addUser(data: SignupRequest):
     username = data.username
@@ -37,7 +37,7 @@ def addUser(data: SignupRequest):
         cursor = conn.execute("SELECT username FROM users WHERE username = ?", (username,))
         row = cursor.fetchone()
         if row is not None:
-            return {"message": "User already exists"}
+            raise HTTPException(status_code=409, detail="User already exists")
         
         conn.execute("INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)", (str(uuid.uuid4()), username, hashed_password))
     return {"message": "User signed up successfully"}

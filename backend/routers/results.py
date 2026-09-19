@@ -15,8 +15,8 @@ def results(user_info: AuthenticatedUser = Depends(get_current_user), view: Lite
     username, is_admin = user_info.username, user_info.is_admin
     if view == "admin" and not is_admin:
         raise HTTPException(
-                                status_code=400,
-                                detail="You are not an admin"
+                                status_code=403,
+                                detail="Only admins can view all results"
                             )
     return get_results(username, admin_view = view is not None)
 
