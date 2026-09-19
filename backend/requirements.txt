@@ -1,6 +1,5 @@
 fastapi[standard]
 pydantic
-sqlalchemy
 argon2-cffi
 itsdangerous
 python-multipart
