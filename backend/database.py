@@ -5,7 +5,9 @@ DB_PATH = Path(__file__).resolve().parent / "database.db"
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def init_db():
@@ -36,7 +38,6 @@ def init_db():
                         FOREIGN KEY (updated_by) REFERENCES users (username)
                     )
                 """)
-
         conn.execute("""
                     CREATE TABLE IF NOT EXISTS answers (
                         exam_id TEXT NOT NULL,
@@ -46,6 +47,7 @@ def init_db():
                         incorrect_score INTEGER NOT NULL,
                         question_type TEXT NOT NULL CHECK (question_type IN ('MCQ', 'Descriptive')),
                         option_count INTEGER,
+                        PRIMARY KEY (exam_id, question_number),
                         FOREIGN KEY (exam_id) REFERENCES exam_catalog (exam_id)
                     )
                 """)
