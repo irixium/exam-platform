@@ -2,7 +2,7 @@
 
 TestTaker is a small exam app built with FastAPI on the backend and React on the frontend. An admin uploads a question paper as a PDF along with a CSV answer key. Candidates sign in, pick an exam from the catalog, answer under a timer, submit, and check scores later.
 
-Live demo: http://152.70.78.167:8000/
+Application Link: http://152.70.78.167:8000/
 
 ## How this was built
 
