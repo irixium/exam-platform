@@ -1,6 +1,6 @@
 # [TestTaker](http://152.70.78.167:8000/)
 
-[TestTaker](http://152.70.78.167:8000/) is a small exam app built with FastAPI on the backend and React on the frontend. An admin uploads a question paper as a PDF along with a CSV answer key. Candidates sign in, pick an exam from the catalog, answer under a timer, submit, and check scores later.
+[TestTaker](http://152.70.78.167:8000/) is a small exam app built with a FastAPI backend and a React frontend. An admin uploads a question paper as a PDF, a CSV answer key along with exam metadata like title, duration etc. Candidates sign in, pick an exam from the catalog, answer under a timer, submit, and check scores later.
 
 [Application Link](http://152.70.78.167:8000/)
 
