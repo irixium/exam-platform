@@ -40,7 +40,7 @@ app.include_router(api_router)
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend" / "dist"
 
-if FRONTEND_DIR.exists()
+if FRONTEND_DIR.exists():
     app.mount(
         "/assets",
         StaticFiles(directory= FRONTEND_DIR / "assets"),
