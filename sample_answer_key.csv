@@ -1,0 +1,3 @@
+question_number,correct_answer,correct_score,incorrect_score,question_type,option_count
+1,4,4,-1,Descriptive,
+2,B,4,0,MCQ,4
