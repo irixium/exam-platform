@@ -4,11 +4,15 @@ TestTaker is a small exam app built with FastAPI on the backend and React on the
 
 Application Link: http://152.70.78.167:8000/
 
-## How this was built
+## NOTE: How this was built
 
-The frontend was generated in full by Muse Spark 1.3. The backend was written from scratch by hand, without model generated code.
+The frontend was generated almost entirely with Muse Spark 1.3, while the backend was written from scratch by hand without using model-generated code.
 
-That split was deliberate. The work here went into the FastAPI backend: password storage, session handling, per route authorization, SQLite transactions, double start races, submit idempotency, API shape, and error paths. The frontend exists so the backend can be clicked through and tested. It works, but it looks generated. Titles and copy such as "Sit down. Write well. Prevail." came out of the model and were left as they were. That is a known limitation, not something the project tries to hide.
+This split was intentional. My main goal with this project was to learn backend development principles from first principles, rather than spend a lot of time learning frontend development. So I chose to build the backend myself and use Muse Spark to speed up the frontend work. I did, however, review the frontend code to understand the basic flow of data between the browser and the backend, how to set up the frontend development server, and how to serve the built frontend from FastAPI in production.
+
+Most of the learning and development effort went into the FastAPI backend: password storage, session handling, per-route authorization, SQLite transactions, handling race conditions when starting an exam, making submission idempotent, designing the API, and handling different error cases.
+
+The frontend mainly exists to provide a usable interface through which the backend can be tested. It works, but it also looks fairly generated, which is expected given how it was built. Some of the titles and copy, such as "Sit down. Write well. Prevail.", came directly from the model and were left as-is. That's a known limitation of the project, and I'm not trying to hide it.
 
 ## Screens
 
