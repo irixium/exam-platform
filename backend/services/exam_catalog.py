@@ -61,7 +61,7 @@ async def upload(data: ExamUploadRequest, exam_doc: UploadFile, key_csv: UploadF
             if answer.question_type == 'MCQ':
                 if not answer.option_count or answer.option_count not in list(range(1,5)):
                     raise HTTPException(status_code=400, detail="Invalid input")
-                int_option_map = {1: 'A', 2: 'B', 3: 'C', 4: 'D'}
+                int_option_map = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
                 answer.correct_answer = int_option_map[answer.correct_answer]
             else:
                 if answer.option_count:
@@ -158,7 +158,7 @@ def update(username: str, exam_id: str, body: ExamUpdateRequest):
             if answer.question_type == 'MCQ':
                 if not answer.option_count or answer.option_count not in list(range(1,5)):
                     raise HTTPException(status_code=400, detail="Invalid input")
-                int_option_map = {1: 'A', 2: 'B', 3: 'C', 4: 'D'}
+                int_option_map = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
                 answer.correct_answer = int_option_map[answer.correct_answer]
             else:
                 if answer.option_count:
