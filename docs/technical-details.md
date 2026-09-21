@@ -1,8 +1,6 @@
 # Backend notes
 
-This file records how the current code handles auth, sessions, permissions, app mounting, and scoring. It is meant to sit next to `README.md`, which stays at the level of what the app does.
-
-Live demo: http://152.70.78.167:8000/
+This file records how the current code handles auth, sessions, permissions, app mounting, and scoring. It is meant to sit next to `README.md`, which stays at the level of what the app does. Table schemas, endpoint reference, and service internals are in `backend-design.md`.
 
 ## Password handling
 
