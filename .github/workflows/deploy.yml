@@ -1,0 +1,63 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy: 
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Oracle VM
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+        run: |
+          set -e
+          echo "Connecting to $SSH_USER@$SSH_HOST"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "$SSH_USER@$SSH_HOST" \
+            'cd /home/ubuntu/exam-platform/prod/exam-platform && scripts/start_public.sh'
+
+          DEPLOY_EXIT_CODE=$?
+
+          echo "Deploy script exited with code: $DEPLOY_EXIT_CODE"
+
+          if [ "$DEPLOY_EXIT_CODE" -ne 0 ]; then
+            echo "Deployment failed"
+            exit "$DEPLOY_EXIT_CODE"
+          fi
+          echo "Deployment completed successfully"
+      - name: Health check
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          echo "Running health check..."
+
+          HTTP_STATUS=$(curl \
+            --silent \
+            --show-error \
+            --output /dev/null \
+            --write-out "%{http_code}" \
+            "$HEALTHCHECK_URL")
+
+          echo "Health check returned HTTP $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo  "Health check passed"
+          else
+            echo "Health check failed"
+            exit 1
+          fi
