@@ -422,6 +422,12 @@ export default function App() {
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+  const autoSubmitFiredRef = useRef(false);
+  const candidateAnswersRef = useRef<Record<number, string>>({});
+  candidateAnswersRef.current = candidateAnswers;
+  const examQuestionsRef = useRef<ExamQuestion[]>([]);
+  examQuestionsRef.current = examQuestions;
   const [results, setResults] = useState<ExamResult[]>([]);
   const [resultsState, setResultsState] = useState<ApiState>({ kind: "idle", message: "" });
   const [isResultsLoading, setIsResultsLoading] = useState(false);
@@ -456,12 +462,24 @@ export default function App() {
   }, [isUploadOpen, editExam]);
 
   useEffect(() => {
-    if (screen !== "exam" || remainingSeconds <= 0) return;
+    if (screen !== "exam") return;
     const timer = window.setInterval(() => {
       setRemainingSeconds((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [screen, activeExam]);
+  }, [screen, activeAttemptId]);
+
+  useEffect(() => {
+    if (screen !== "exam") return;
+    if (remainingSeconds > 0) return;
+    if (!activeAttemptId) return;
+    if (autoSubmitFiredRef.current) return;
+    if (isSubmitting) return;
+    // Manual submit already succeeded for this attempt — nothing to auto-submit.
+    if (examState.kind === "success" && lastSubmittedAttemptId === activeAttemptId) return;
+    autoSubmitFiredRef.current = true;
+    void handleSubmitExam(true);
+  }, [screen, remainingSeconds, activeAttemptId, isSubmitting, examState.kind, lastSubmittedAttemptId]);
 
   useEffect(() => {
     return () => {
@@ -890,6 +908,8 @@ export default function App() {
     setExamState({ kind: "idle", message: "" });
     setRemainingSeconds(0);
     setLastSubmittedAttemptId(null);
+    setAutoSubmitted(false);
+    autoSubmitFiredRef.current = false;
     setScreen("catalog");
   }
 
@@ -1143,6 +1163,9 @@ export default function App() {
       setCandidateAnswers({});
       setExamState({ kind: "idle", message: "" });
       setRemainingSeconds(Math.max(0, resumedSeconds));
+      setLastSubmittedAttemptId(null);
+      setAutoSubmitted(false);
+      autoSubmitFiredRef.current = false;
       setScreen("exam");
     } catch (error) {
       setCatalogState({
@@ -1159,23 +1182,30 @@ export default function App() {
     setCandidateAnswers((current) => ({ ...current, [questionNumber]: value }));
   }
 
-  async function handleSubmitExam() {
+  async function handleSubmitExam(auto = false) {
     if (!activeExam || !activeAttemptId) return;
+    if (isSubmitting) return;
+    // Guard against a second auto-submit racing a manual submit that
+    // already succeeded for this attempt.
+    if (auto && lastSubmittedAttemptId === activeAttemptId) return;
 
-    const payload = examQuestions
-      .filter((q) => (candidateAnswers[q.question_number] ?? "").trim().length > 0)
+    const questions = auto && examQuestions.length === 0 ? examQuestionsRef.current : examQuestions;
+    const answersSnapshot = auto ? candidateAnswersRef.current : candidateAnswers;
+    const payload = questions
+      .filter((q) => (answersSnapshot[q.question_number] ?? "").trim().length > 0)
       .map((q) => ({
         question_number: q.question_number,
-        answer: (candidateAnswers[q.question_number] ?? "").trim()
+        answer: (answersSnapshot[q.question_number] ?? "").trim()
       }));
 
-    if (payload.length === 0) {
+    if (payload.length === 0 && !auto) {
       setExamState({ kind: "error", message: "Answer at least one question before submitting." });
       return;
     }
 
     setIsSubmitting(true);
-    setExamState({ kind: "idle", message: "" });
+    if (!auto) setExamState({ kind: "idle", message: "" });
+    else setExamState({ kind: "idle", message: "Time is up — submitting your answers…" });
 
     try {
       const response = await fetch(`/api/submit-exam/${encodeURIComponent(activeAttemptId)}`, {
@@ -1190,14 +1220,31 @@ export default function App() {
       }
 
       setLastSubmittedAttemptId(activeAttemptId);
-      setExamState({
-        kind: "success",
-        message: `Submitted ${payload.length} of ${examQuestions.length} answers.`
-      });
+      if (auto) {
+        setAutoSubmitted(true);
+        setExamState({
+          kind: "success",
+          message: `Time ran out — your answers were submitted automatically (${payload.length} of ${questions.length} answered).`
+        });
+      } else {
+        setExamState({
+          kind: "success",
+          message: `Submitted ${payload.length} of ${questions.length} answers.`
+        });
+      }
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to submit your answers.";
+      // If the timer already fired and the manual submit landed first, the
+      // second request 404s with "already submitted" — don't clobber success.
+      if (auto && /already submitted/i.test(message) && lastSubmittedAttemptId === activeAttemptId) {
+        return;
+      }
+      if (auto) autoSubmitFiredRef.current = false;
       setExamState({
         kind: "error",
-        message: error instanceof Error ? error.message : "Unable to submit your answers."
+        message: auto
+          ? `Time ran out, but auto-submit failed (${message}). Please press Submit now — you have a short grace period.`
+          : message
       });
     } finally {
       setIsSubmitting(false);
@@ -1463,6 +1510,10 @@ export default function App() {
       (q) => (candidateAnswers[q.question_number] ?? "").trim().length > 0
     ).length;
     const expired = remainingSeconds <= 0;
+    const submitted = examState.kind === "success" && lastSubmittedAttemptId === activeAttemptId;
+    const progressPct =
+      examQuestions.length > 0 ? Math.round((answeredCount / examQuestions.length) * 100) : 0;
+    const timerTone = expired ? "is-expired" : remainingSeconds < 300 ? "is-low" : "";
 
     return (
       <main className="exam-page">
@@ -1490,6 +1541,35 @@ export default function App() {
             <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
           </div>
         </header>
+
+        <div className="exam-stickybar" role="status" aria-live="polite" aria-label="Exam progress">
+          <div className="exam-stickybar-inner">
+            <div className={`sticky-timer ${timerTone}`}>
+              <span className="sticky-dot" aria-hidden="true" />
+              <span className="sticky-label">{expired ? "Time up" : "Time left"}</span>
+              <strong className="sticky-clock">{formatClock(remainingSeconds)}</strong>
+            </div>
+            <div className="sticky-progress" aria-label={`${answeredCount} of ${examQuestions.length} answered`}>
+              <span className="sticky-count">
+                {pad(answeredCount)}/{pad(examQuestions.length)} answered
+              </span>
+              <span className="sticky-track" aria-hidden="true">
+                <i style={{ width: `${progressPct}%` }} />
+              </span>
+              <span className="sticky-pct" aria-hidden="true">
+                {progressPct}%
+              </span>
+            </div>
+            <button
+              className="btn-accent sticky-submit"
+              disabled={isSubmitting || submitted}
+              onClick={() => void handleSubmitExam(false)}
+              type="button"
+            >
+              {submitted ? "Submitted ✓" : isSubmitting ? "Submitting…" : "Submit"}
+            </button>
+          </div>
+        </div>
 
         <div className="exam-inner">
           <section className="exam-head" aria-labelledby="exam-title">
@@ -1522,9 +1602,19 @@ export default function App() {
             </dl>
           </section>
 
-          {expired ? (
-            <p className="status error" role="status">
-              Time is up. Please submit now — late answers may not be accepted.
+          {expired && !submitted ? (
+            <p className="status error" role="alert">
+              {isSubmitting
+                ? "Time is up — submitting your answers automatically…"
+                : autoSubmitted
+                  ? "Time ran out — your answers were submitted automatically."
+                  : "Time is up — submitting your answers automatically…"}
+            </p>
+          ) : null}
+          {expired && submitted && autoSubmitted ? (
+            <p className="status success" role="status">
+              Time ran out — your answers were submitted automatically. You can now view your result
+              once evaluation completes.
             </p>
           ) : null}
 
@@ -1576,6 +1666,7 @@ export default function App() {
                             <button
                               key={letter}
                               className={`mcq-option ${value === letter ? "selected" : ""}`}
+                              disabled={expired || submitted}
                               onClick={() =>
                                 handleCandidateAnswer(
                                   question.question_number,
@@ -1595,8 +1686,9 @@ export default function App() {
                           <span>Your answer</span>
                           <textarea
                             rows={3}
-                            placeholder="Type your answer…"
+                            placeholder={expired ? "Time is up — answers are locked." : "Type your answer…"}
                             value={value}
+                            disabled={expired || submitted}
                             onChange={(event) =>
                               handleCandidateAnswer(question.question_number, event.target.value)
                             }
@@ -1642,11 +1734,11 @@ export default function App() {
                   ) : null}
                   <button
                     className="btn-accent"
-                    disabled={isSubmitting}
-                    onClick={() => void handleSubmitExam()}
+                    disabled={isSubmitting || submitted}
+                    onClick={() => void handleSubmitExam(false)}
                     type="button"
                   >
-                    {isSubmitting ? "Submitting…" : "Submit answers"}
+                    {submitted ? "Submitted ✓" : isSubmitting ? "Submitting…" : "Submit answers"}
                   </button>
                 </div>
               </div>
