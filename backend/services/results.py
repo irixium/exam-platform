@@ -21,7 +21,7 @@ def get_results(username: str, admin_view: bool):
         results = cursor.fetchall()
         return [ExamResult(attempt_id=result[0], exam_id=result[1], name=result[2], exam_type=result[3],
                            description=result[4], duration=result[5], total_marks=result[6], total_questions=result[7],
-                           score=result[8], submission_time=result[9], username=result[10]) for result in results]
+                           score=result[8] or 0, submission_time=result[9], username=result[10]) for result in results]
 
 def get_attempt_result(username: str, attempt_id: str, is_admin: bool):
     with get_connection() as conn:
