@@ -29,7 +29,7 @@ jobs:
             -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             "$SSH_USER@$SSH_HOST" \
-            'cd /home/ubuntu/exam-platform/prod/exam-platform && scripts/start_public.sh'
+            'cd /home/ubuntu/exam-platform/prod/exam-platform && git pull && scripts/start_public.sh'
 
           DEPLOY_EXIT_CODE=$?
 
