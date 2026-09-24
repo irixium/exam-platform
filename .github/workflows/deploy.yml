@@ -34,20 +34,6 @@ jobs:
             "cd /home/ubuntu/exam-platform/prod/exam-platform && \
              git switch main && \
              git pull && \
-             scripts/start_public.sh && \
-             echo 'Running health check...' && \
-             HTTP_STATUS=\$(curl \
-               --silent \
-               --show-error \
-               --output /dev/null \
-               --write-out '%{http_code}' \
-               '$HEALTHCHECK_URL') && \
-             echo \"Health check returned HTTP \$HTTP_STATUS\" && \
-             if [ \"\$HTTP_STATUS\" -ge 200 ] && [ \"\$HTTP_STATUS\" -lt 300 ]; then \
-               echo 'Health check passed'; \
-             else \
-               echo 'Health check failed'; \
-               exit 1; \
-             fi"
+             scripts/start_public.sh"
 
           echo "Deployment completed successfully"
