@@ -20,6 +20,13 @@ if [ -n "$PID" ]; then
     fi
 fi
 
+# Load NVM so npm/node are available in non-interactive SSH sessions
+export NVM_DIR="$HOME/.nvm"
+
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+fi
+
 cd "$ROOT_DIR/frontend"
 npm run build
 
@@ -34,5 +41,33 @@ nohup uvicorn main:app \
 backend_pid=$!
 
 echo "backend pid: $backend_pid"
-echo "backend running on port 8000"
-echo "logs: $ROOT_DIR/backend/uvicorn.log"
+echo "waiting for backend to start..."
+
+# Wait for backend to become reachable
+for i in {1..30}; do
+    if curl --silent --fail \
+        --output /dev/null \
+        http://127.0.0.1:8000/api/health; then
+
+        echo "backend is healthy"
+        echo "logs: $ROOT_DIR/backend/uvicorn.log"
+        exit 0
+    fi
+
+    # Make sure the process hasn't crashed
+    if ! kill -0 "$backend_pid" 2>/dev/null; then
+        echo "ERROR: backend process exited unexpectedly"
+        echo "--- uvicorn.log ---"
+        cat "$ROOT_DIR/backend/uvicorn.log"
+        exit 1
+    fi
+
+    echo "backend not ready yet (attempt $i/30)"
+    sleep 2
+done
+
+echo "ERROR: backend did not become healthy within 60 seconds"
+echo "--- uvicorn.log ---"
+cat "$ROOT_DIR/backend/uvicorn.log"
+
+exit 1
