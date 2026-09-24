@@ -7,7 +7,7 @@ ROOT_DIR="$SCRIPT_DIR/.."
 # Kill existing process using port 8000
 echo "checking port 8000..."
 
-PID=$(lsof -ti :8000)
+PID=$(lsof -ti :8000 || true)
 
 if [ -n "$PID" ]; then
     echo "killing existing process on port 8000: $PID"
@@ -15,7 +15,7 @@ if [ -n "$PID" ]; then
     sleep 1
 
     # Force kill if still running
-    PID=$(lsof -ti :8000)
+    PID=$(lsof -ti :8000 || true)
     if [ -n "$PID" ]; then
         kill -9 $PID 2>/dev/null
     fi
