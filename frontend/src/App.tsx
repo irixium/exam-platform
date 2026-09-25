@@ -58,6 +58,8 @@ type ReviewDraft = {
   answers: AnswerRow[];
 };
 
+type EvaluationStatus = "pending" | "evaluated";
+
 type ExamResult = {
   username: string;
   attempt_id: string;
@@ -70,6 +72,7 @@ type ExamResult = {
   total_questions: number;
   score: number;
   submission_time: number;
+  evaluation_status: EvaluationStatus;
 };
 
 type ExamQuestionResult = {
@@ -161,6 +164,9 @@ function normalizeResult(raw: unknown): ExamResult | null {
   const attempt_id = String(r.attempt_id ?? "");
   const exam_id = String(r.exam_id ?? "");
   if (!attempt_id || !exam_id) return null;
+  // Backend may (temporarily) send the misspelled `evaluation_staus` — accept it.
+  const rawStatus = r.evaluation_status ?? r.evaluation_staus;
+  const evaluation_status: EvaluationStatus = rawStatus === "pending" ? "pending" : "evaluated";
   return {
     username: String(r.username ?? ""),
     attempt_id,
@@ -172,7 +178,8 @@ function normalizeResult(raw: unknown): ExamResult | null {
     total_marks: Number(r.total_marks) || 0,
     total_questions: Number(r.total_questions) || 0,
     score: Number(r.score) || 0,
-    submission_time: Number(r.submission_time) || 0
+    submission_time: Number(r.submission_time) || 0,
+    evaluation_status
   };
 }
 
@@ -1198,10 +1205,8 @@ export default function App() {
         answer: (answersSnapshot[q.question_number] ?? "").trim()
       }));
 
-    if (payload.length === 0 && !auto) {
-      setExamState({ kind: "error", message: "Answer at least one question before submitting." });
-      return;
-    }
+    // Empty submissions are allowed — the backend records them as pending
+    // attempts (score defaults to 0 until evaluation completes).
 
     setIsSubmitting(true);
     if (!auto) setExamState({ kind: "idle", message: "" });
@@ -1355,8 +1360,10 @@ export default function App() {
   const resultStats = useMemo(() => {
     const attempts = results.length;
     const papers = new Set(results.map((r) => r.exam_id)).size;
-    const totalScore = results.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
-    return { attempts, papers, totalScore };
+    const evaluated = results.filter((r) => r.evaluation_status !== "pending");
+    const pending = attempts - evaluated.length;
+    const totalScore = evaluated.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
+    return { attempts, papers, totalScore, evaluated: evaluated.length, pending };
   }, [results]);
 
   const resultDetailStats = useMemo(() => {
@@ -1803,8 +1810,8 @@ export default function App() {
               </h1>
               <p className="hero-copy">
                 {user?.is_admin && isAdminView
-                  ? "Administrator view — every evaluated attempt across all candidates. Select a row for the full breakdown."
-                  : "Every evaluated attempt of yours. Select a row for the full per-question breakdown."}
+                  ? "Administrator view — every submitted attempt across all candidates, evaluated or pending. Select a row for details."
+                  : "Every submitted attempt of yours, evaluated or pending. Select a row for details."}
               </p>
             </div>
             <div className="hero-side">
@@ -1814,11 +1821,11 @@ export default function App() {
                   <dd>{pad(resultStats.attempts)}</dd>
                 </div>
                 <div>
-                  <dt>Papers</dt>
-                  <dd>{pad(resultStats.papers)}</dd>
+                  <dt>Pending</dt>
+                  <dd>{pad(resultStats.pending)}</dd>
                 </div>
                 <div>
-                  <dt>Score</dt>
+                  <dt>Score · evaluated</dt>
                   <dd>{resultStats.totalScore}</dd>
                 </div>
               </dl>
@@ -1859,7 +1866,7 @@ export default function App() {
               <p className="eyebrow" style={{ margin: 0 }}>
                 {isResultsLoading
                   ? "Loading results…"
-                  : `${results.length} attempt${results.length === 1 ? "" : "s"}${
+                  : `${results.length} attempt${results.length === 1 ? "" : "s"} · ${resultStats.evaluated} evaluated · ${resultStats.pending} pending${
                       isAdminView ? " · view=admin" : ""
                     }`}
               </p>
@@ -1884,8 +1891,8 @@ export default function App() {
                 <p className="eyebrow">
                   <b>∅</b> — No results
                 </p>
-                <h3>No evaluated attempts yet.</h3>
-                <p>Submit a paper and your score will appear here once evaluation completes.</p>
+                <h3>No attempts yet.</h3>
+                <p>Submit a paper and it will appear here — score included — once evaluation completes.</p>
               </div>
             ) : null}
 
@@ -1897,7 +1904,9 @@ export default function App() {
                   <span>Attempt</span>
                   <span>Score</span>
                 </div>
-                {results.map((result, i) => (
+                {results.map((result, i) => {
+                  const isPending = result.evaluation_status === "pending";
+                  return (
                   <article
                     className="exam-row result-row"
                     key={result.attempt_id}
@@ -1906,7 +1915,12 @@ export default function App() {
                   >
                     <span className="row-num">{pad(i + 1)}</span>
                     <div className="result-paper">
-                      <span className="row-kind">{result.exam_type}</span>
+                      <span className="result-badges">
+                        <span className="row-kind" style={{ marginBottom: 0 }}>{result.exam_type}</span>
+                        <span className={`status-badge ${isPending ? "pending" : "evaluated"}`}>
+                          {isPending ? "Pending" : "Evaluated"}
+                        </span>
+                      </span>
                       <h3 className="row-title">{result.name}</h3>
                       {result.description ? (
                         <p className="row-desc">{result.description}</p>
@@ -1927,6 +1941,10 @@ export default function App() {
                         <dd title={formatDateTime(result.submission_time)}>{formatDateTime(result.submission_time)}</dd>
                       </div>
                       <div>
+                        <dt>Status</dt>
+                        <dd>{isPending ? "Pending" : "Evaluated"}</dd>
+                      </div>
+                      <div>
                         <dt>Questions</dt>
                         <dd>{result.total_questions}</dd>
                       </div>
@@ -1936,16 +1954,24 @@ export default function App() {
                       </div>
                     </dl>
                     <div className="row-action result-score">
-                      <strong>
-                        {result.score}
-                        <span> / {result.total_marks}</span>
-                      </strong>
+                      {isPending ? (
+                        <strong className="score-pending">
+                          Pending
+                          <span> / {result.total_marks}</span>
+                        </strong>
+                      ) : (
+                        <strong>
+                          {result.score}
+                          <span> / {result.total_marks}</span>
+                        </strong>
+                      )}
                       <span className="arrow" aria-hidden="true">
                         →
                       </span>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             ) : null}
           </section>
@@ -1963,6 +1989,7 @@ export default function App() {
       resultDetail && resultDetail.total_marks > 0
         ? Math.round((resultDetail.score / resultDetail.total_marks) * 100)
         : 0;
+    const isDetailPending = resultDetail?.evaluation_status === "pending";
     return (
       <main className="catalog-page">
         <header className="topbar">
@@ -2045,6 +2072,11 @@ export default function App() {
                     <b>Result</b> — {resultDetail.exam_type} · {formatDateTime(resultDetail.submission_time)}
                   </p>
                   <h1 id="result-title">{resultDetail.name}</h1>
+                  <p style={{ marginTop: "14px" }}>
+                    <span className={`status-badge ${isDetailPending ? "pending" : "evaluated"}`}>
+                      {isDetailPending ? "Evaluation pending" : "Evaluated"}
+                    </span>
+                  </p>
                   {resultDetail.description ? (
                     <p className="hero-copy">{resultDetail.description}</p>
                   ) : null}
@@ -2053,6 +2085,22 @@ export default function App() {
                     {resultDetail.duration} min
                   </p>
                 </div>
+                {isDetailPending ? (
+                  <dl className="hero-stats result-hero-stats">
+                    <div>
+                      <dt>Status</dt>
+                      <dd>Pending</dd>
+                    </div>
+                    <div>
+                      <dt>Submitted</dt>
+                      <dd style={{ fontSize: "1rem" }}>{formatDateTime(resultDetail.submission_time)}</dd>
+                    </div>
+                    <div>
+                      <dt>Questions</dt>
+                      <dd>{pad(resultDetail.total_questions)}</dd>
+                    </div>
+                  </dl>
+                ) : (
                 <dl className="hero-stats result-hero-stats">
                   <div>
                     <dt>Score</dt>
@@ -2071,8 +2119,31 @@ export default function App() {
                     </dd>
                   </div>
                 </dl>
+                )}
               </section>
 
+              {isDetailPending ? (
+                <div className="empty" style={{ marginTop: "28px" }}>
+                  <p className="eyebrow">
+                    <b>◷</b> — Evaluation pending
+                  </p>
+                  <h3>Evaluation is pending.</h3>
+                  <p>
+                    Your answers have been submitted and are waiting to be evaluated.
+                    Please refresh in a while to see your score and per-question breakdown.
+                  </p>
+                  <div style={{ marginTop: "20px" }}>
+                    <button
+                      className="btn-line"
+                      disabled={isResultDetailLoading}
+                      onClick={() => void openResultDetail(resultDetail.attempt_id)}
+                      type="button"
+                    >
+                      {isResultDetailLoading ? "Refreshing…" : "Refresh ⟳"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="exam-grid result-grid">
                 <article className="exam-paper" aria-label="Question paper">
                   <div className="exam-paper-head">
@@ -2167,6 +2238,7 @@ export default function App() {
                 </div>
                 </section>
               </div>
+              )}
             </>
           ) : null}
         </div>
