@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
-
+      
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+  
 jobs:
   deploy:
     runs-on: ubuntu-latest
