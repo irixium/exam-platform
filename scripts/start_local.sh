@@ -10,15 +10,18 @@ cleanup() {
 
 trap cleanup EXIT
 
+cd "$ROOT_DIR/frontend"
+echo "$(pwd)"
+npm run build
+npm run dev &
+frontend_pid=$! 
+
 cd "$ROOT_DIR/backend"
 source .venv/bin/activate
 uvicorn main:app --reload &
 backend_pid=$!
 
-cd "$ROOT_DIR/frontend"
-echo "$(pwd)"
-npm run dev &
-frontend_pid=$! 
+
 
 echo "backend pid :$backend_pid"
 echo "frontend pid :$frontend_pid"
