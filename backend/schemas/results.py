@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Literal
 
 class ExamResult(BaseModel):
     username: str
@@ -12,6 +13,7 @@ class ExamResult(BaseModel):
     total_questions: int = Field(gt=0)
     score: int
     submission_time: int
+    evaluation_status: Literal["pending", "evaluated"]
 
 class ExamQuestionResult(BaseModel):
     question_number: int
