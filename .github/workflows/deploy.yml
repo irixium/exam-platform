@@ -19,7 +19,6 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
 
         run: |
           set -e
