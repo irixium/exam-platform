@@ -1,8 +1,8 @@
-# [TestTaker](https://exam-platform.mooo.com/)
+# [ExamPlatform](https://exam-platform.mooo.com/)
 
-[TestTaker](https://exam-platform.mooo.com/) is a small exam app built with a FastAPI backend and a React frontend. An admin uploads a question paper as a PDF, a CSV answer key along with exam metadata like title, duration etc. Candidates sign in, pick an exam from the catalog, answer under a timer, submit, and check scores later.
+[ExamPlatform ](https://exam-platform.mooo.com/) is a small exam app built with a FastAPI backend and a React frontend. An admin uploads a question paper as a PDF, a CSV answer key along with exam metadata like title, duration etc. Candidates sign in, pick an exam from the catalog, answer under a timer, submit, and check scores later.
 
-[Application Link](http://152.70.78.167:8000/)
+[Application Link](https://exam-platform.mooo.com/)
 
 ## NOTE: How this was built
 
